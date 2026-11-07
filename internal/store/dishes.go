@@ -15,7 +15,11 @@ import (
 
 // ListDishes returns a restaurant's dishes, oldest first.
 func (s *Store) ListDishes(ctx context.Context, restaurantID uuid.UUID) ([]dish.Dish, error) {
-	rows, err := s.q.ListDishes(ctx, restaurantID)
+	var rows []sqlcgen.Dish
+	err := s.inTenant(ctx, restaurantID, pgx.ReadOnly, func(q *sqlcgen.Queries) (err error) {
+		rows, err = q.ListDishes(ctx, restaurantID)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list dishes: %w", err)
 	}
@@ -28,19 +32,27 @@ func (s *Store) ListDishes(ctx context.Context, restaurantID uuid.UUID) ([]dish.
 
 // GetDish returns one of a restaurant's dishes, or ErrNotFound.
 func (s *Store) GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error) {
-	r, err := s.q.GetDish(ctx, sqlcgen.GetDishParams{RestaurantID: restaurantID, ID: dishID})
+	var r sqlcgen.Dish
+	err := s.inTenant(ctx, restaurantID, pgx.ReadOnly, func(q *sqlcgen.Queries) (err error) {
+		r, err = q.GetDish(ctx, sqlcgen.GetDishParams{RestaurantID: restaurantID, ID: dishID})
+		return err
+	})
 	return result(r, err, "get dish")
 }
 
 // CreateDish adds a dish to a restaurant. Any ID in d is ignored.
 func (s *Store) CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.Dish) (dish.Dish, error) {
-	r, err := s.q.CreateDish(ctx, sqlcgen.CreateDishParams{
-		RestaurantID:  restaurantID,
-		Name:          d.Name,
-		Description:   d.Description,
-		PriceAmount:   d.Price.Amount,
-		PriceCurrency: d.Price.Currency,
-		ImageUrl:      d.Image,
+	var r sqlcgen.Dish
+	err := s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
+		r, err = q.CreateDish(ctx, sqlcgen.CreateDishParams{
+			RestaurantID:  restaurantID,
+			Name:          d.Name,
+			Description:   d.Description,
+			PriceAmount:   d.Price.Amount,
+			PriceCurrency: d.Price.Currency,
+			ImageUrl:      d.Image,
+		})
+		return err
 	})
 	return result(r, err, "create dish")
 }
@@ -48,21 +60,29 @@ func (s *Store) CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.D
 // UpdateDish replaces one of a restaurant's dishes, or returns ErrNotFound.
 // Any ID in d is ignored.
 func (s *Store) UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, d dish.Dish) (dish.Dish, error) {
-	r, err := s.q.UpdateDish(ctx, sqlcgen.UpdateDishParams{
-		RestaurantID:  restaurantID,
-		ID:            dishID,
-		Name:          d.Name,
-		Description:   d.Description,
-		PriceAmount:   d.Price.Amount,
-		PriceCurrency: d.Price.Currency,
-		ImageUrl:      d.Image,
+	var r sqlcgen.Dish
+	err := s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
+		r, err = q.UpdateDish(ctx, sqlcgen.UpdateDishParams{
+			RestaurantID:  restaurantID,
+			ID:            dishID,
+			Name:          d.Name,
+			Description:   d.Description,
+			PriceAmount:   d.Price.Amount,
+			PriceCurrency: d.Price.Currency,
+			ImageUrl:      d.Image,
+		})
+		return err
 	})
 	return result(r, err, "update dish")
 }
 
 // DeleteDish removes one of a restaurant's dishes, or returns ErrNotFound.
 func (s *Store) DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) error {
-	n, err := s.q.DeleteDish(ctx, sqlcgen.DeleteDishParams{RestaurantID: restaurantID, ID: dishID})
+	var n int64
+	err := s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
+		n, err = q.DeleteDish(ctx, sqlcgen.DeleteDishParams{RestaurantID: restaurantID, ID: dishID})
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("delete dish: %w", err)
 	}

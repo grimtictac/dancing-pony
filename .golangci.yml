@@ -17,6 +17,12 @@ linters:
   settings:
     misspell:
       locale: UK
+  exclusions:
+    rules:
+      # Test helpers create their own contexts on purpose; there is no
+      # request context to thread through.
+      - path: _test\.go
+        linters: [contextcheck]
 
 formatters:
   enable:

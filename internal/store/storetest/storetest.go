@@ -45,6 +45,8 @@ type DB struct {
 	// AppURL connects as pony_app, the API's role. It is only usable after
 	// migrations have created the role.
 	AppURL string
+	// SuperURL connects as a superuser, which bypasses Row-Level Security.
+	SuperURL string
 }
 
 var (
@@ -166,6 +168,7 @@ func create(t testing.TB, template string) DB {
 		Name:     name,
 		OwnerURL: urlFor(name, ownerRole, ownerPassword),
 		AppURL:   urlFor(name, appRole, appPassword),
+		SuperURL: urlFor(name, superURL.User.Username(), superPassword()),
 	}
 }
 
@@ -191,3 +194,8 @@ func execAsSuperuser(ctx context.Context, stmt string) error {
 type quietLogger struct{}
 
 func (quietLogger) Printf(string, ...any) {}
+
+func superPassword() string {
+	p, _ := superURL.User.Password()
+	return p
+}
