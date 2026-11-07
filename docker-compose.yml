@@ -1,6 +1,15 @@
 version: '3.7'
 
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: the-dancing-pony-api
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
   postgres:
     image: postgres:latest
     container_name: postgres
