@@ -31,3 +31,8 @@ RETURNING *;
 -- name: DeleteDish :execrows
 DELETE FROM dishes
 WHERE restaurant_id = $1 AND id = $2;
+
+-- name: CountDishes :one
+SELECT count(*)
+FROM dishes
+WHERE restaurant_id = $1;

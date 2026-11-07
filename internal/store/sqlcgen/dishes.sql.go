@@ -11,6 +11,19 @@ import (
 	"github.com/google/uuid"
 )
 
+const countDishes = `-- name: CountDishes :one
+SELECT count(*)
+FROM dishes
+WHERE restaurant_id = $1
+`
+
+func (q *Queries) CountDishes(ctx context.Context, restaurantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countDishes, restaurantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDish = `-- name: CreateDish :one
 INSERT INTO dishes (restaurant_id, name, description, price_amount, price_currency, image_url)
 VALUES ($1, $2, $3, $4, $5, $6)

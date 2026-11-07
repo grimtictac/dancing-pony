@@ -35,3 +35,37 @@ func (q *Queries) GetRestaurantBySlug(ctx context.Context, slug string) (GetRest
 	)
 	return i, err
 }
+
+const upsertRestaurant = `-- name: UpsertRestaurant :one
+INSERT INTO restaurants (slug, name, currency)
+VALUES ($1, $2, $3)
+ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
+RETURNING id, slug, name, currency
+`
+
+type UpsertRestaurantParams struct {
+	Slug     string
+	Name     string
+	Currency string
+}
+
+type UpsertRestaurantRow struct {
+	ID       uuid.UUID
+	Slug     string
+	Name     string
+	Currency string
+}
+
+// Schema owner only (pony seed): pony_app may not change the directory.
+// The no-op DO UPDATE makes RETURNING give the existing row on a conflict.
+func (q *Queries) UpsertRestaurant(ctx context.Context, arg UpsertRestaurantParams) (UpsertRestaurantRow, error) {
+	row := q.db.QueryRow(ctx, upsertRestaurant, arg.Slug, arg.Name, arg.Currency)
+	var i UpsertRestaurantRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Currency,
+	)
+	return i, err
+}
