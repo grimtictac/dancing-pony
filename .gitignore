@@ -1,0 +1,11 @@
+# Compiled binaries
+/the-dancing-pony-v2
+*.exe
+*.test
+*.out
+
+# Local environment
+.env
+
+# Private working notes
+PLAN_LOCAL.md
