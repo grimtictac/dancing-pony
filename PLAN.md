@@ -9,7 +9,7 @@ This plan covers all four tasks in the brief, plus observability. Work is delive
 | Language | Go (latest stable), standard library `net/http` routing | Matches the team's stack; no framework needed for the routing we have |
 | Persistence | PostgreSQL, `pressly/goose` migrations built into the binary | One binary handles serving, migrations and admin set-up |
 | Query layer | `sqlc` + `pgx` | Plain SQL files you can run in `psql`, with type-safe generated Go |
-| Multi-tenancy | Shared schema, `restaurant_id` on every tenant-owned table, composite foreign keys, Postgres Row-Level Security | Each restaurant's data is isolated by the database itself, not just by the application code |
+| Multi-tenancy | Shared schema, `restaurant_id` on every tenant-owned table, composite foreign keys, Postgres Row-Level Security ([ADR-001](docs/adr/0001-multi-tenancy.md)) | Each restaurant's data is isolated by the database itself, not just by the application code |
 | Tenant routing | Path-based: `/restaurants/{slug}/…` | Explicit and easy to test; no wildcard TLS certificate needed |
 | Auth | Our own registration, login and session flows built on vetted libraries: argon2id, `crypto/rand`, `x/oauth2`, `go-oidc` | The brief asks for these flows; all cryptography comes from standard, audited libraries |
 | Sessions | Random opaque tokens sent as `Authorization: Bearer`, stored hashed in Postgres | Can be revoked immediately; a single service doesn't need JWTs |
@@ -40,8 +40,8 @@ This plan covers all four tasks in the brief, plus observability. Work is delive
 
 | Round | Scope | Status |
 |-------|-------|--------|
-| 0 | Foundations: integer money, project layout, configuration, timeouts, routing, error format, CI, Bruno, hardened Compose file | In progress |
-| 1 | Postgres, migrations, multi-tenancy with Row-Level Security, tenant-isolation tests | Planned |
+| 0 | Foundations: integer money, project layout, configuration, timeouts, routing, error format, CI, Bruno, hardened Compose file | Done |
+| 1 | Postgres, migrations, multi-tenancy with Row-Level Security, tenant-isolation tests | Done |
 | 2 | Task 1: search (full-text and typo-tolerant), filters, pagination, reviews and ratings | Planned |
 | 3 | Metrics, logs, health checks, Grafana | Planned |
 | 4 | Task 2: users, sessions, roles, brute-force defence | Planned |
