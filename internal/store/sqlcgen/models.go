@@ -10,6 +10,18 @@ import (
 	"github.com/google/uuid"
 )
 
+type Dish struct {
+	RestaurantID  uuid.UUID
+	ID            uuid.UUID
+	Name          string
+	Description   string
+	PriceAmount   int64
+	PriceCurrency string
+	ImageUrl      string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type Restaurant struct {
 	ID        uuid.UUID
 	Slug      string
