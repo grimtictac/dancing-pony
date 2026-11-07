@@ -6,33 +6,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"the-dancing-pony-v2/internal/review"
 	"the-dancing-pony-v2/internal/sentiment"
 	"the-dancing-pony-v2/internal/store"
 	"the-dancing-pony-v2/internal/tenant"
 )
 
-// demoUserHeader names the reviewer until real login exists (Round 4).
-// It is NOT authentication: anyone can claim any name. It only lets the
-// review endpoints be built and tried with several "users" now; Round 4
-// replaces it with the session's user.
-const demoUserHeader = "X-Demo-User"
-
-// demoUserNamespace turns a demo user name into a stable UUID (UUIDv5).
-var demoUserNamespace = uuid.MustParse("6f1d1f8e-3c2a-4b7e-9d65-2a1c0e5b7f10")
-
 const errReviewNotFound = "review not found"
-
-func demoUser(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	name := strings.TrimSpace(r.Header.Get(demoUserHeader))
-	if name == "" || len(name) > 64 {
-		writeProblem(w, http.StatusBadRequest, demoUserHeader+" header (1-64 characters) is required until login exists")
-		return uuid.Nil, false
-	}
-	return uuid.NewSHA1(demoUserNamespace, []byte(name)), true
-}
 
 // putReview handles PUT /restaurants/{slug}/dishes/{id}/reviews/me: create
 // or replace the caller's review. PUT fits because each user has exactly
@@ -42,10 +22,7 @@ func (a *api) putReview(w http.ResponseWriter, r *http.Request, rest tenant.Rest
 	if !ok {
 		return
 	}
-	userID, ok := demoUser(w, r)
-	if !ok {
-		return
-	}
+	userID := currentUser(r.Context()).ID
 	in, ok := decodeJSON[review.Input](w, r)
 	if !ok {
 		return
@@ -95,10 +72,7 @@ func (a *api) deleteReview(w http.ResponseWriter, r *http.Request, rest tenant.R
 	if !ok {
 		return
 	}
-	userID, ok := demoUser(w, r)
-	if !ok {
-		return
-	}
+	userID := currentUser(r.Context()).ID
 	err := a.store.DeleteReview(r.Context(), rest.ID, dishID, userID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeProblem(w, http.StatusNotFound, errReviewNotFound)

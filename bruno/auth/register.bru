@@ -1,0 +1,31 @@
+meta {
+  name: Register
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/auth/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "{{newEmail}}",
+    "password": "a long enough password"
+  }
+}
+
+script:pre-request {
+  bru.setVar("newEmail", `pippin-${Date.now()}@shire.example`);
+}
+
+docs {
+  Passwords: 12 to 128 characters, no composition rules. An email that is
+  already registered gets 409.
+}
+
+assert {
+  res.status: eq 201
+}

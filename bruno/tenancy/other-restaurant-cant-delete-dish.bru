@@ -7,7 +7,11 @@ meta {
 delete {
   url: {{baseUrl}}/restaurants/{{otherRestaurant}}/dishes/{{firstDishId}}
   body: none
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{dragonOwnerToken}}
 }
 
 assert {

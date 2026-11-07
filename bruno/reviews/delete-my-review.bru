@@ -7,11 +7,11 @@ meta {
 delete {
   url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/reviews/me
   body: none
-  auth: none
+  auth: bearer
 }
 
-headers {
-  X-Demo-User: sam
+auth:bearer {
+  token: {{samToken}}
 }
 
 assert {

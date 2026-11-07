@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"the-dancing-pony-v2/internal/auth"
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/id"
 	"the-dancing-pony-v2/internal/review"
@@ -23,6 +24,11 @@ import (
 // Every dish method is scoped to one restaurant.
 type Store interface {
 	Ping(ctx context.Context) error
+	CreateUser(ctx context.Context, email, passwordHash string) (auth.User, error)
+	UserByEmail(ctx context.Context, email string) (auth.User, string, error)
+	CreateSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expires time.Time) error
+	UserBySession(ctx context.Context, tokenHash []byte) (auth.User, error)
+	DeleteSession(ctx context.Context, tokenHash []byte) error
 	RestaurantBySlug(ctx context.Context, slug string) (tenant.Restaurant, error)
 	ListDishes(ctx context.Context, restaurantID uuid.UUID, opts store.ListOptions) ([]dish.Dish, string, error)
 	GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error)
@@ -54,6 +60,11 @@ func New(s Store, logger *slog.Logger, m *Metrics) http.Handler {
 	mux.HandleFunc("GET /health", a.livez) // kept for existing clients; same as /livez
 	mux.HandleFunc("GET /livez", a.livez)
 	mux.HandleFunc("GET /readyz", a.readyz)
+	// Everything below needs a logged-in user, except register and login.
+	mux.HandleFunc("POST /auth/register", a.register)
+	mux.HandleFunc("POST /auth/login", a.login)
+	mux.HandleFunc("POST /auth/logout", a.authed(a.logout))
+	mux.HandleFunc("GET /auth/me", a.authed(a.me))
 	for _, rt := range a.tenantRoutes() {
 		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.handler))
 	}
@@ -84,11 +95,19 @@ func (a *api) tenantRoutes() []tenantRoute {
 // restaurantHandler handles a request within one restaurant (tenant).
 type restaurantHandler func(http.ResponseWriter, *http.Request, tenant.Restaurant)
 
-// inRestaurant resolves the {slug} in the path to the restaurant that every
-// query in h is scoped to, and records it in the request context. An unknown
-// slug is a 404.
+// inRestaurant authenticates the caller, then resolves the {slug} in the
+// path to the restaurant that every query in h is scoped to, and records
+// both in the request context. Authentication comes first, so anonymous
+// callers can't even probe which restaurants exist. An unknown slug is a
+// 404.
 func (a *api) inRestaurant(h restaurantHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		u, ok := a.authenticate(w, r)
+		if !ok {
+			return
+		}
+		r = r.WithContext(withUser(r.Context(), u))
+
 		slug := r.PathValue("slug")
 		info(r.Context()).Restaurant = slug
 		rest, err := a.store.RestaurantBySlug(r.Context(), slug)

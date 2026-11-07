@@ -1,0 +1,27 @@
+meta {
+  name: Log in (Frodo)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "frodo@shire.example",
+    "password": "{{demoPassword}}"
+  }
+}
+
+vars:post-response {
+  frodoToken: res.body.token
+}
+
+assert {
+  res.status: eq 200
+  res.body.token_type: eq "Bearer"
+}

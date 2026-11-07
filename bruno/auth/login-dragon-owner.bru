@@ -1,0 +1,27 @@
+meta {
+  name: Log in (Green Dragon owner)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "owner@green-dragon.example",
+    "password": "{{demoPassword}}"
+  }
+}
+
+vars:post-response {
+  dragonOwnerToken: res.body.token
+}
+
+assert {
+  res.status: eq 200
+  res.body.token_type: eq "Bearer"
+}

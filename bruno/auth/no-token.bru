@@ -1,0 +1,19 @@
+meta {
+  name: No token
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes
+  body: none
+  auth: none
+}
+
+docs {
+  Everything except register, login and the health checks needs a login.
+}
+
+assert {
+  res.status: eq 401
+}

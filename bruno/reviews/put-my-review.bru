@@ -7,11 +7,11 @@ meta {
 put {
   url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/reviews/me
   body: json
-  auth: none
+  auth: bearer
 }
 
-headers {
-  X-Demo-User: frodo
+auth:bearer {
+  token: {{frodoToken}}
 }
 
 body:json {

@@ -1,0 +1,16 @@
+meta {
+  name: Who am I
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/auth/me
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.email: eq "owner@orc-shack.example"
+}

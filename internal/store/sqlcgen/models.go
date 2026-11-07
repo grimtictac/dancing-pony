@@ -44,3 +44,18 @@ type Review struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+type Session struct {
+	TokenHash []byte
+	UserID    uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+type User struct {
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    string
+	IsPlatformAdmin bool
+	CreatedAt       time.Time
+}

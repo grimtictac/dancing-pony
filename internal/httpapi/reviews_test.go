@@ -3,7 +3,6 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"the-dancing-pony-v2/internal/dish"
@@ -11,16 +10,6 @@ import (
 )
 
 const validReviewJSON = `{"rating":5,"body":"Delicious, best pie in Bree!"}`
-
-// doAs is do with the temporary X-Demo-User header set.
-func doAs(t *testing.T, h http.Handler, user, method, path, body string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
-	req.Header.Set(demoUserHeader, user)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	return rec
-}
 
 func TestReviews(t *testing.T) {
 	h := newAPI(t)
@@ -52,6 +41,10 @@ func TestReviews(t *testing.T) {
 		t.Errorf("sentiment = %+v, want none for an empty body", got.Sentiment)
 	}
 
+	if rec := doAs(t, h, "", http.MethodPut, path+"/me", validReviewJSON); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous PUT: status %d, want 401", rec.Code)
+	}
+
 	list := decode[[]review.Review](t, do(t, h, http.MethodGet, path, ""))
 	if len(list) != 2 {
 		t.Errorf("listed %d reviews, want 2", len(list))
@@ -69,9 +62,8 @@ func TestReviews(t *testing.T) {
 	}
 
 	for name, rec := range map[string]*httptest.ResponseRecorder{
-		"no demo user":    do(t, h, http.MethodPut, path+"/me", validReviewJSON),
-		"rating too high": doAs(t, h, "pippin", http.MethodPut, path+"/me", `{"rating":6}`),
-		"rating missing":  doAs(t, h, "pippin", http.MethodPut, path+"/me", `{"body":"hmm"}`),
+		"rating too high": doAs(t, h, "frodo", http.MethodPut, path+"/me", `{"rating":6}`),
+		"rating missing":  doAs(t, h, "frodo", http.MethodPut, path+"/me", `{"body":"hmm"}`),
 	} {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", name, rec.Code)

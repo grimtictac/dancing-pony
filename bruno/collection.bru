@@ -1,0 +1,13 @@
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{ownerToken}}
+}
+
+docs {
+  Requests inherit The Orc Shack owner's token (ownerToken), set by the Auth
+  folder. Run Auth first. Demo users and their password come from
+  `pony seed` (local only).
+}

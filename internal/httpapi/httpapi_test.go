@@ -14,12 +14,30 @@ import (
 	"the-dancing-pony-v2/internal/store/storetest"
 )
 
-// newAPI returns the API on a fresh database seeded with the demo
-// restaurants: orc-shack (Seed Cake, Mushroom Pie) and green-dragon.
-func newAPI(t *testing.T) http.Handler {
+// testAPI is the API under test plus a session token for each demo user
+// (store.DemoUsers, by name). Requests without an Authorization header
+// are sent as orc-owner; use h.raw to send one with none.
+type testAPI struct {
+	raw    http.Handler
+	tokens map[string]string
+}
+
+func (a *testAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") == "" {
+		r.Header.Set("Authorization", "Bearer "+a.tokens["orc-owner"])
+	}
+	a.raw.ServeHTTP(w, r)
+}
+
+// newAPI returns the API on a fresh database seeded with the demo users
+// and restaurants: orc-shack (Seed Cake, Mushroom Pie) and green-dragon.
+func newAPI(t *testing.T) *testAPI {
 	t.Helper()
 	ctx := context.Background()
 	db := storetest.Migrated(t)
+	if err := store.SeedUsers(ctx, db.OwnerURL, store.DemoUsers, store.DemoPassword); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.Seed(ctx, db.OwnerURL, store.DemoRestaurants); err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +46,33 @@ func newAPI(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	return New(s, slog.New(slog.DiscardHandler), nil)
+	a := &testAPI{raw: New(s, slog.New(slog.DiscardHandler), nil), tokens: map[string]string{}}
+	for _, u := range store.DemoUsers {
+		a.tokens[u.Name] = login(t, a.raw, u.Email, store.DemoPassword)
+	}
+	return a
+}
+
+// login logs in and returns the session token.
+func login(t *testing.T, h http.Handler, email, password string) string {
+	t.Helper()
+	rec := do(t, h, http.MethodPost, "/auth/login", `{"email":"`+email+`","password":"`+password+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login %s: status %d, body %s", email, rec.Code, rec.Body)
+	}
+	return decode[map[string]any](t, rec)["token"].(string)
+}
+
+// doAs sends a request as the named demo user ("" for no user at all).
+func doAs(t *testing.T, h *testAPI, user, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
+	if user != "" {
+		req.Header.Set("Authorization", "Bearer "+h.tokens[user])
+	}
+	rec := httptest.NewRecorder()
+	h.raw.ServeHTTP(rec, req)
+	return rec
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {

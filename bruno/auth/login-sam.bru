@@ -1,0 +1,27 @@
+meta {
+  name: Log in (Sam)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "sam@shire.example",
+    "password": "{{demoPassword}}"
+  }
+}
+
+vars:post-response {
+  samToken: res.body.token
+}
+
+assert {
+  res.status: eq 200
+  res.body.token_type: eq "Bearer"
+}

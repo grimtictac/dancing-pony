@@ -23,6 +23,7 @@ type reqInfo struct {
 	ID         string
 	Route      string
 	Restaurant string
+	User       string
 	Err        error
 }
 
@@ -64,6 +65,9 @@ func accessLog(logger *slog.Logger, m *Metrics, next http.Handler) http.Handler 
 			slog.Int("status", sw.status),
 			slog.Float64("duration_ms", float64(elapsed.Microseconds())/1000),
 			slog.Int("bytes", sw.bytes),
+		}
+		if ri.User != "" {
+			attrs = append(attrs, slog.String("user_id", ri.User))
 		}
 		if ri.Restaurant != "" {
 			attrs = append(attrs, slog.String("restaurant", ri.Restaurant))

@@ -1,0 +1,27 @@
+meta {
+  name: Log in (Orc Shack owner)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "owner@orc-shack.example",
+    "password": "{{demoPassword}}"
+  }
+}
+
+vars:post-response {
+  ownerToken: res.body.token
+}
+
+assert {
+  res.status: eq 200
+  res.body.token_type: eq "Bearer"
+}

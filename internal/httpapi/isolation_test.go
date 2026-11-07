@@ -37,18 +37,21 @@ func TestTenantIsolation(t *testing.T) {
 	// exactly like a missing one.
 	for _, tt := range []struct {
 		pattern, method, suffix, body string
+		// The attacker: green-dragon's owner for dish writes (they may
+		// manage dishes, just not orc-shack's), a customer for the rest.
+		user string
 	}{
-		{"GET /restaurants/{slug}/dishes/{id}", http.MethodGet, "", ""},
-		{"PUT /restaurants/{slug}/dishes/{id}", http.MethodPut, "", validDishJSON},
-		{"DELETE /restaurants/{slug}/dishes/{id}", http.MethodDelete, "", ""},
-		{"GET /restaurants/{slug}/dishes/{id}/reviews", http.MethodGet, "/reviews", ""},
-		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodPut, "/reviews/me", validReviewJSON},
-		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodDelete, "/reviews/me", ""},
+		{"GET /restaurants/{slug}/dishes/{id}", http.MethodGet, "", "", "frodo"},
+		{"PUT /restaurants/{slug}/dishes/{id}", http.MethodPut, "", validDishJSON, "dragon-owner"},
+		{"DELETE /restaurants/{slug}/dishes/{id}", http.MethodDelete, "", "", "dragon-owner"},
+		{"GET /restaurants/{slug}/dishes/{id}/reviews", http.MethodGet, "/reviews", "", "frodo"},
+		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodPut, "/reviews/me", validReviewJSON, "frodo"},
+		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodDelete, "/reviews/me", "", "frodo"},
 	} {
 		covered[tt.pattern] = true
 		t.Run(tt.pattern, func(t *testing.T) {
-			missing := doAs(t, h, "frodo", tt.method, dragon+"/"+unknownDishID+tt.suffix, tt.body)
-			got := doAs(t, h, "frodo", tt.method, dragon+"/"+cake.ID+tt.suffix, tt.body)
+			missing := doAs(t, h, tt.user, tt.method, dragon+"/"+unknownDishID+tt.suffix, tt.body)
+			got := doAs(t, h, tt.user, tt.method, dragon+"/"+cake.ID+tt.suffix, tt.body)
 
 			if got.Code != http.StatusNotFound {
 				t.Errorf("status = %d, want %d", got.Code, http.StatusNotFound)
