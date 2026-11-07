@@ -88,48 +88,10 @@ Best of luck, and happy coding!
 
 The Bash Team
 
-## Deploying to a DigitalOcean droplet
+## Deployment
 
-This app is a small Go API that listens on port 8080. The quickest production-style setup is to run it behind Docker on a DigitalOcean droplet.
-
-1. Create a Ubuntu 22.04 or 24.04 droplet with Docker installed, or install Docker on the server:
-
-   ```bash
-   sudo apt-get update
-   sudo apt-get install -y ca-certificates curl gnupg
-   sudo install -m 0755 -d /etc/apt/keyrings
-   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-   echo \
-     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
-     sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-   sudo apt-get update
-   sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-   sudo usermod -aG docker $USER
-   newgrp docker
-   ```
-
-2. Clone this repo on the droplet:
-
-   ```bash
-   git clone <your-repo-url>
-   cd the-dancing-pony-v2-iwpxwn
-   ```
-
-3. Start the app and its supporting services:
-
-   ```bash
-   docker compose up -d --build
-   ```
-
-4. Check the app is responding:
-
-   ```bash
-   curl http://localhost:8080/health
-   curl http://localhost:8080/dishes
-   ```
-
-5. If you want the app to be publicly accessible, open port 8080 in the DigitalOcean firewall and allow HTTP/HTTPS traffic in the droplet firewall.
-
-6. Optional: put the app behind Nginx/Cloudflare or add a reverse proxy if you want clean domain names and TLS.
-
-This repository already includes a `Dockerfile` and compose configuration for the API, and the app is exposed on port 8080 by default.
+Production is https://silson.dev: one Go binary under systemd behind Nginx on a
+DigitalOcean droplet, with DigitalOcean Managed Postgres. Every green push to
+`main` is deployed by CI, with migrations and automatic rollback. See
+[deploy/README.md](deploy/README.md) for how it works, why it isn't
+containerised there, and the one-time set-up.

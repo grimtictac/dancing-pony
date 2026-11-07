@@ -10,7 +10,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded pull-request runs are cancelled; runs on main never are,
+  # so a deploy is never cut off halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Third-party actions are pinned to commit SHAs. Tool versions match the Makefile.
 jobs:
@@ -69,3 +71,46 @@ jobs:
       # seed, app, Prometheus) and runs the Bruno collection against it, so
       # the collection, Dockerfile and compose file can't drift from the API.
       - run: make api-test
+
+  # Every green push to main is deployed to https://silson.dev. The binary is
+  # built here and copied over SSH; deploy/pony-deploy on the droplet
+  # migrates, restarts and rolls back if the new release isn't ready.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, lint, vuln, api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://silson.dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o pony ./cmd/pony
+      - name: Install the deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          # Pinned host key: no trust-on-first-use from CI.
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          ssh="ssh -i $HOME/.ssh/deploy -o IdentitiesOnly=yes -o BatchMode=yes"
+          scp -i ~/.ssh/deploy -o IdentitiesOnly=yes -o BatchMode=yes pony "deploy@$DEPLOY_HOST:pony.new"
+          $ssh "deploy@$DEPLOY_HOST" sudo /usr/local/bin/pony-deploy /home/deploy/pony.new "$GITHUB_SHA"
+      - name: Smoke test through Nginx
+        run: |
+          curl -fsS --retry 5 --retry-all-errors https://silson.dev/readyz
+          curl -fsS -o /dev/null -X POST https://silson.dev/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"frodo@shire.example","password":"pony-demo-password"}'
