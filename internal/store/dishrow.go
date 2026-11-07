@@ -12,18 +12,15 @@ import (
 	"the-dancing-pony-v2/internal/photo"
 )
 
-// dishSelect reads dishes with their rating summary. The LATERAL subquery
-// runs once per dish row; Round 6 measures whether caching the aggregate
-// on the dish is worth it.
+// dishSelect reads dishes with their rating summary and photo. The rating
+// comes from running totals on the dish (migration 11), kept up to date by
+// a trigger on reviews.
 const dishSelect = `SELECT d.restaurant_id, d.id, d.name, d.description, d.price_amount, d.price_currency,
-       d.image_url, d.created_at, d.updated_at, r.rating_count, r.rating_avg,
+       d.image_url, d.created_at, d.updated_at, d.rating_count::bigint,
+       CASE WHEN d.rating_count > 0
+            THEN round(d.rating_sum::numeric / d.rating_count, 2)::float8 END AS rating_avg,
        p.key, p.width, p.height, p.thumbhash, p.data_url
 FROM dishes d
-CROSS JOIN LATERAL (
-    SELECT count(*) AS rating_count, round(avg(rv.rating), 2)::float8 AS rating_avg
-    FROM reviews rv
-    WHERE rv.restaurant_id = d.restaurant_id AND rv.dish_id = d.id
-) r
 LEFT JOIN dish_photos p ON p.restaurant_id = d.restaurant_id AND p.dish_id = d.id`
 
 // dishRow is one row of dishSelect, in column order.

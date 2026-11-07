@@ -22,6 +22,8 @@ type Dish struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	Search        interface{}
+	RatingCount   int32
+	RatingSum     int32
 }
 
 type DishPhoto struct {
