@@ -1,0 +1,17 @@
+meta {
+  name: List reviews
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/reviews
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+  res.body.length: gte 2
+}

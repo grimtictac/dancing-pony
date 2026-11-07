@@ -30,6 +30,13 @@ type Dish struct {
 	Description string `json:"description"`
 	Price       Money  `json:"price"`
 	Image       string `json:"image"`
+	Rating      Rating `json:"rating"` // read-only: derived from reviews
+}
+
+// Rating summarises a dish's reviews. Average is null when there are none.
+type Rating struct {
+	Average *float64 `json:"average"`
+	Count   int64    `json:"count"`
 }
 
 // Validate returns the first problem found with d, or nil if it is valid

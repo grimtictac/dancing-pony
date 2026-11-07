@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Dish struct {
@@ -28,4 +29,18 @@ type Restaurant struct {
 	Name      string
 	Currency  string
 	CreatedAt time.Time
+}
+
+type Review struct {
+	RestaurantID   uuid.UUID
+	ID             uuid.UUID
+	DishID         uuid.UUID
+	UserID         uuid.UUID
+	Rating         int16
+	Body           string
+	SentimentScore pgtype.Float4
+	SentimentLabel pgtype.Text
+	SentimentModel pgtype.Text
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }

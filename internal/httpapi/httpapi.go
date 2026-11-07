@@ -12,6 +12,8 @@ import (
 
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/id"
+	"the-dancing-pony-v2/internal/review"
+	"the-dancing-pony-v2/internal/sentiment"
 	"the-dancing-pony-v2/internal/store"
 	"the-dancing-pony-v2/internal/tenant"
 )
@@ -25,10 +27,14 @@ type Store interface {
 	CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.Dish) (dish.Dish, error)
 	UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, d dish.Dish) (dish.Dish, error)
 	DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) error
+	PutReview(ctx context.Context, restaurantID, dishID, userID uuid.UUID, in review.Input, s *sentiment.Sentiment) (review.Review, bool, error)
+	DeleteReview(ctx context.Context, restaurantID, dishID, userID uuid.UUID) error
+	ListReviews(ctx context.Context, restaurantID, dishID uuid.UUID, limit int) ([]review.Review, error)
 }
 
 type api struct {
-	store Store
+	store  Store
+	scorer sentiment.Scorer
 }
 
 // New returns the HTTP handler for the API. Routes use the standard library's
@@ -36,7 +42,7 @@ type api struct {
 // Allow header and unknown paths get a 404. All errors are RFC 9457
 // application/problem+json.
 func New(s Store) http.Handler {
-	a := &api{store: s}
+	a := &api{store: s, scorer: sentiment.WordList{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.root)
@@ -62,6 +68,9 @@ func (a *api) tenantRoutes() []tenantRoute {
 		{"GET /restaurants/{slug}/dishes/{id}", a.getDish},
 		{"PUT /restaurants/{slug}/dishes/{id}", a.updateDish},
 		{"DELETE /restaurants/{slug}/dishes/{id}", a.deleteDish},
+		{"GET /restaurants/{slug}/dishes/{id}/reviews", a.listReviews},
+		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", a.putReview},
+		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", a.deleteReview},
 	}
 }
 

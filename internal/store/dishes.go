@@ -15,12 +15,12 @@ import (
 
 // GetDish returns one of a restaurant's dishes, or ErrNotFound.
 func (s *Store) GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error) {
-	var r sqlcgen.Dish
-	err := s.inTenant(ctx, restaurantID, pgx.ReadOnly, func(q *sqlcgen.Queries) (err error) {
-		r, err = q.GetDish(ctx, sqlcgen.GetDishParams{RestaurantID: restaurantID, ID: dishID})
+	var r dishRow
+	err := s.inTenantTx(ctx, restaurantID, pgx.ReadOnly, func(tx pgx.Tx) (err error) {
+		r, err = getDishRow(ctx, tx, restaurantID, dishID)
 		return err
 	})
-	return result(r, err, "get dish")
+	return rowResult(r, err, "get dish")
 }
 
 // CreateDish adds a dish to a restaurant. Any ID in d is ignored.
@@ -43,9 +43,9 @@ func (s *Store) CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.D
 // UpdateDish replaces one of a restaurant's dishes, or returns ErrNotFound.
 // Any ID in d is ignored.
 func (s *Store) UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, d dish.Dish) (dish.Dish, error) {
-	var r sqlcgen.Dish
-	err := s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
-		r, err = q.UpdateDish(ctx, sqlcgen.UpdateDishParams{
+	var r dishRow
+	err := s.inTenantTx(ctx, restaurantID, pgx.ReadWrite, func(tx pgx.Tx) error {
+		_, err := s.q.WithTx(tx).UpdateDish(ctx, sqlcgen.UpdateDishParams{
 			RestaurantID:  restaurantID,
 			ID:            dishID,
 			Name:          d.Name,
@@ -54,9 +54,14 @@ func (s *Store) UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, 
 			PriceCurrency: d.Price.Currency,
 			ImageUrl:      d.Image,
 		})
+		if err != nil {
+			return err
+		}
+		// Read it back with its rating summary, in the same transaction.
+		r, err = getDishRow(ctx, tx, restaurantID, dishID)
 		return err
 	})
-	return result(r, err, "update dish")
+	return rowResult(r, err, "update dish")
 }
 
 // DeleteDish removes one of a restaurant's dishes, or returns ErrNotFound.
@@ -83,6 +88,16 @@ func result(r sqlcgen.Dish, err error, op string) (dish.Dish, error) {
 		return dish.Dish{}, fmt.Errorf("%s: %w", op, err)
 	}
 	return toDish(r), nil
+}
+
+func rowResult(r dishRow, err error, op string) (dish.Dish, error) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return dish.Dish{}, ErrNotFound
+	}
+	if err != nil {
+		return dish.Dish{}, fmt.Errorf("%s: %w", op, err)
+	}
+	return r.toDish(), nil
 }
 
 func toDish(r sqlcgen.Dish) dish.Dish {

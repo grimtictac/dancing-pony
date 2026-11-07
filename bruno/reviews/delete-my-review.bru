@@ -1,0 +1,19 @@
+meta {
+  name: Delete my review (Sam)
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/reviews/me
+  body: none
+  auth: none
+}
+
+headers {
+  X-Demo-User: sam
+}
+
+assert {
+  res.status: eq 204
+}

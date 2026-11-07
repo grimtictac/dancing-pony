@@ -1,0 +1,34 @@
+meta {
+  name: Put my review (Frodo)
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/reviews/me
+  body: json
+  auth: none
+}
+
+headers {
+  X-Demo-User: frodo
+}
+
+body:json {
+  {
+    "rating": 5,
+    "body": "Delicious! Really the best seed cake in Bree."
+  }
+}
+
+assert {
+  res.body.rating: eq 5
+  res.body.sentiment.label: eq "positive"
+  res.body.sentiment.model: eq "wordlist-v1"
+}
+
+tests {
+  test("creates (201) or, on a re-run, replaces (200)", function () {
+    expect([200, 201]).to.include(res.getStatus());
+  });
+}

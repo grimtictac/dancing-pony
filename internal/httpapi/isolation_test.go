@@ -36,16 +36,19 @@ func TestTenantIsolation(t *testing.T) {
 	// Routes that address one dish: another restaurant's dish must look
 	// exactly like a missing one.
 	for _, tt := range []struct {
-		pattern, method, body string
+		pattern, method, suffix, body string
 	}{
-		{"GET /restaurants/{slug}/dishes/{id}", http.MethodGet, ""},
-		{"PUT /restaurants/{slug}/dishes/{id}", http.MethodPut, validDishJSON},
-		{"DELETE /restaurants/{slug}/dishes/{id}", http.MethodDelete, ""},
+		{"GET /restaurants/{slug}/dishes/{id}", http.MethodGet, "", ""},
+		{"PUT /restaurants/{slug}/dishes/{id}", http.MethodPut, "", validDishJSON},
+		{"DELETE /restaurants/{slug}/dishes/{id}", http.MethodDelete, "", ""},
+		{"GET /restaurants/{slug}/dishes/{id}/reviews", http.MethodGet, "/reviews", ""},
+		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodPut, "/reviews/me", validReviewJSON},
+		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodDelete, "/reviews/me", ""},
 	} {
 		covered[tt.pattern] = true
 		t.Run(tt.pattern, func(t *testing.T) {
-			missing := do(t, h, tt.method, dragon+"/"+unknownDishID, tt.body)
-			got := do(t, h, tt.method, dragon+"/"+cake.ID, tt.body)
+			missing := doAs(t, h, "frodo", tt.method, dragon+"/"+unknownDishID+tt.suffix, tt.body)
+			got := doAs(t, h, "frodo", tt.method, dragon+"/"+cake.ID+tt.suffix, tt.body)
 
 			if got.Code != http.StatusNotFound {
 				t.Errorf("status = %d, want %d", got.Code, http.StatusNotFound)

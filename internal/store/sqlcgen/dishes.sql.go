@@ -25,6 +25,7 @@ func (q *Queries) CountDishes(ctx context.Context, restaurantID uuid.UUID) (int6
 }
 
 const createDish = `-- name: CreateDish :one
+
 INSERT INTO dishes (restaurant_id, name, description, price_amount, price_currency, image_url)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING restaurant_id, id, name, description, price_amount, price_currency, image_url, created_at, updated_at
@@ -39,6 +40,8 @@ type CreateDishParams struct {
 	ImageUrl      string
 }
 
+// Every query names its restaurant explicitly. Row-Level Security is a
+// second, independent guard, not a replacement for these conditions.
 func (q *Queries) CreateDish(ctx context.Context, arg CreateDishParams) (Dish, error) {
 	row := q.db.QueryRow(ctx, createDish,
 		arg.RestaurantID,
@@ -79,37 +82,6 @@ func (q *Queries) DeleteDish(ctx context.Context, arg DeleteDishParams) (int64, 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const getDish = `-- name: GetDish :one
-
-SELECT restaurant_id, id, name, description, price_amount, price_currency, image_url, created_at, updated_at
-FROM dishes
-WHERE restaurant_id = $1 AND id = $2
-`
-
-type GetDishParams struct {
-	RestaurantID uuid.UUID
-	ID           uuid.UUID
-}
-
-// Every query names its restaurant explicitly. Row-Level Security is a
-// second, independent guard, not a replacement for these conditions.
-func (q *Queries) GetDish(ctx context.Context, arg GetDishParams) (Dish, error) {
-	row := q.db.QueryRow(ctx, getDish, arg.RestaurantID, arg.ID)
-	var i Dish
-	err := row.Scan(
-		&i.RestaurantID,
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.PriceAmount,
-		&i.PriceCurrency,
-		&i.ImageUrl,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const updateDish = `-- name: UpdateDish :one

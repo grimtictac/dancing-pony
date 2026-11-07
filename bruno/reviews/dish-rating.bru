@@ -1,0 +1,22 @@
+meta {
+  name: Dish rating
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}
+  body: none
+  auth: none
+}
+
+docs {
+  rating.average and rating.count are derived from the dish's reviews;
+  average is null when there are none.
+}
+
+assert {
+  res.status: eq 200
+  res.body.rating.count: gte 2
+  res.body.rating.average: isNumber
+}

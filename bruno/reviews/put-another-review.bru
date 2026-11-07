@@ -1,0 +1,33 @@
+meta {
+  name: Put another review (Sam)
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/reviews/me
+  body: json
+  auth: none
+}
+
+headers {
+  X-Demo-User: sam
+}
+
+body:json {
+  {
+    "rating": 2,
+    "body": "Not good. Stale and a bit bland."
+  }
+}
+
+assert {
+  res.body.rating: eq 2
+  res.body.sentiment.label: eq "negative"
+}
+
+tests {
+  test("creates (201) or, on a re-run, replaces (200)", function () {
+    expect([200, 201]).to.include(res.getStatus());
+  });
+}

@@ -14,7 +14,6 @@ import (
 
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/id"
-	"the-dancing-pony-v2/internal/store/sqlcgen"
 )
 
 // Page sizes for ListDishes.
@@ -45,20 +44,20 @@ type sortKey struct {
 	column string // empty: sort by id only
 	cast   string // type of column, for the cursor comparison
 	desc   bool
-	value  func(sqlcgen.Dish) string // the row's sort value, for the cursor
+	value  func(dishRow) string // the row's sort value, for the cursor
 }
 
 // Go note: a map literal of struct values, keyed by the API's sort names.
 // Anonymous functions are values too, so each entry carries its own getter.
 var sortKeys = map[string]sortKey{
 	"":       {},
-	"name":   {column: "name", cast: "text", value: func(d sqlcgen.Dish) string { return d.Name }},
-	"-name":  {column: "name", cast: "text", desc: true, value: func(d sqlcgen.Dish) string { return d.Name }},
+	"name":   {column: "name", cast: "text", value: func(d dishRow) string { return d.Name }},
+	"-name":  {column: "name", cast: "text", desc: true, value: func(d dishRow) string { return d.Name }},
 	"price":  {column: "price_amount", cast: "bigint", value: priceValue},
 	"-price": {column: "price_amount", cast: "bigint", desc: true, value: priceValue},
 }
 
-func priceValue(d sqlcgen.Dish) string { return strconv.FormatInt(d.PriceAmount, 10) }
+func priceValue(d dishRow) string { return strconv.FormatInt(d.PriceAmount, 10) }
 
 // cursor marks where the previous page ended. It is opaque to clients:
 // base64url-encoded JSON.
@@ -76,7 +75,7 @@ func (s *Store) ListDishes(ctx context.Context, restaurantID uuid.UUID, opts Lis
 		return nil, "", err
 	}
 
-	var rows []sqlcgen.Dish
+	var rows []dishRow
 	err = s.inTenantTx(ctx, restaurantID, pgx.ReadOnly, func(tx pgx.Tx) error {
 		r, err := tx.Query(ctx, query, args...)
 		if err != nil {
@@ -85,7 +84,7 @@ func (s *Store) ListDishes(ctx context.Context, restaurantID uuid.UUID, opts Lis
 		// Go note: CollectRows is generic. The type argument in [...] says
 		// what each row becomes; RowToStructByPos fills the struct's fields
 		// from the columns in order.
-		rows, err = pgx.CollectRows(r, pgx.RowToStructByPos[sqlcgen.Dish])
+		rows, err = pgx.CollectRows(r, pgx.RowToStructByPos[dishRow])
 		return err
 	})
 	if err != nil {
@@ -105,7 +104,7 @@ func (s *Store) ListDishes(ctx context.Context, restaurantID uuid.UUID, opts Lis
 
 	dishes := make([]dish.Dish, len(rows))
 	for i, r := range rows {
-		dishes[i] = toDish(r)
+		dishes[i] = r.toDish()
 	}
 	return dishes, next, nil
 }
@@ -140,10 +139,7 @@ func buildDishList(restaurantID uuid.UUID, opts ListOptions) (string, []any, sor
 		return "$" + strconv.Itoa(len(args))
 	}
 
-	b.WriteString(`SELECT restaurant_id, id, name, description, price_amount, price_currency,
-       image_url, created_at, updated_at
-FROM dishes
-WHERE restaurant_id = $1`)
+	b.WriteString(dishSelect + "\nWHERE d.restaurant_id = $1")
 	if opts.Search != "" {
 		p := arg(opts.Search)
 		// Go note: %[1]s reuses the first argument, so p appears twice.
