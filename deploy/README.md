@@ -90,3 +90,27 @@ The database is already shared.
 | Manual rollback | `ln -sfn /opt/pony/releases/<previous> /opt/pony/current && systemctl restart pony` |
 | Metrics | `curl 127.0.0.1:9091/metrics` on the droplet (never public) |
 | Create an admin | `sudo -u pony env $(grep MIGRATE /etc/pony/pony.env \| xargs) /opt/pony/current admin create --email you@example.com --name "You"` |
+| Rotate a database password | Reset it in the DigitalOcean panel, edit `/etc/pony/pony.env`, then `systemctl restart pony`. Do it before the next deploy, which restarts the service anyway. |
+
+## Database access from a desktop
+
+The database only trusts the droplet, so tunnel through it. The tunnel
+lands on the droplet and goes on to the database's private VPC address.
+
+```sh
+ssh -N -L 15434:private-dancing-pony-postgres18-do-user-6189174-0.i.db.ondigitalocean.com:25060 root@DROPLET
+```
+
+Then, in another terminal:
+
+```sh
+psql "postgres://pony_app@127.0.0.1:15434/dancingpony?sslmode=verify-ca&sslrootcert=$HOME/Downloads/ca-certificate.crt"
+```
+
+- `psql` prompts for the password, so it never lands in shell history.
+- Use `verify-ca`, not `verify-full`: the certificate names the database
+  host, not `127.0.0.1`. The CA check still proves it's the real cluster.
+- Connect as `pony_app` to see what the API sees: nothing in a tenant table
+  until `SELECT set_config('app.restaurant_id', '<uuid>', false);`. Keep
+  `doadmin` for schema work; it owns the tables, but `FORCE ROW LEVEL
+  SECURITY` applies to it too.
