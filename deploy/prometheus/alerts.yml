@@ -1,0 +1,42 @@
+groups:
+  - name: pony
+    rules:
+      - alert: PonyDown
+        expr: up{job="pony"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The API's metrics endpoint is unreachable.
+          description: Prometheus has not scraped pony for over a minute. Is pony serve running?
+
+      - alert: PonyHighErrorRate
+        expr: |
+          sum(rate(pony_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(pony_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Over 5% of requests are failing with server errors.
+
+      - alert: PonySlowRequests
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, route) (rate(pony_http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '95th percentile latency of {{ $labels.route }} is over 500 ms.'
+
+      # A burst of client errors (4xx) often means probing or abuse. Login
+      # failure and throttling metrics (Round 4) will sharpen this into the
+      # "Evil Orc" brute-force alert.
+      - alert: PonyClientErrorSpike
+        expr: sum(rate(pony_http_requests_total{status=~"4.."}[2m])) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 5 client errors per second for 2 minutes.

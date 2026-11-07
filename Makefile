@@ -17,6 +17,7 @@ BRUNO := docker run --rm --network host -v "$(CURDIR)/bruno:/collection" -w /col
 # An isolated copy of the compose stack: own project, volumes and ports.
 API_TEST_PORT := 18082
 COMPOSE_TEST := PONY_PORT=$(API_TEST_PORT) POSTGRES_PORT=15432 PROMETHEUS_PORT=19090 \
+	GRAFANA_PORT=13000 PONY_INTERNAL_PORT=19091 \
 	docker compose -p dancing-pony-test --env-file .env.example --profile app
 
 .DEFAULT_GOAL := help
@@ -81,8 +82,8 @@ api-test: ## Run the Bruno collection against the full compose stack, in isolati
 	$(BRUNO) run --env local --env-var baseUrl=http://127.0.0.1:$(API_TEST_PORT)
 
 .PHONY: up
-up: ## Start Postgres and Prometheus in Docker (needs .env)
-	docker compose up -d --wait postgres prometheus
+up: ## Start Postgres, Prometheus (:9090) and Grafana (:3000) in Docker (needs .env)
+	docker compose up -d --wait postgres prometheus grafana
 
 .PHONY: db
 db: up migrate seed ## Start Postgres, apply migrations and add the demo restaurants
