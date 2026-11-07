@@ -22,7 +22,7 @@ import (
 )
 
 const adminUsage = `Usage:
-  pony admin create --email <email>
+  pony admin create --email <email> [--name <name>]
       Create a platform admin, or promote an existing user. The password is
       prompted for (or read from the first line of stdin), never taken as
       an argument, so it can't end up in shell history.
@@ -49,6 +49,7 @@ func admin(args []string, getenv func(string) string, stdout, stderr io.Writer) 
 	fs := flag.NewFlagSet("admin "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	email := fs.String("email", "", "user's email")
+	name := fs.String("name", "Platform admin", "user's name (create)")
 	slug := fs.String("restaurant", "", "restaurant slug (grant)")
 	role := fs.String("role", "", "owner or staff (grant)")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -66,7 +67,7 @@ func admin(args []string, getenv func(string) string, stdout, stderr io.Writer) 
 	var err error
 	switch args[0] {
 	case "create":
-		err = createAdmin(ctx, dsn, normalised, stderr)
+		err = createAdmin(ctx, dsn, strings.TrimSpace(*name), normalised, stderr)
 		if err == nil {
 			_, _ = fmt.Fprintf(stdout, "%s is a platform admin\n", normalised)
 		}
@@ -86,7 +87,7 @@ func admin(args []string, getenv func(string) string, stdout, stderr io.Writer) 
 	return 0
 }
 
-func createAdmin(ctx context.Context, dsn, email string, prompt io.Writer) error {
+func createAdmin(ctx context.Context, dsn, name, email string, prompt io.Writer) error {
 	pw, err := readPassword(prompt)
 	if err != nil {
 		return err
@@ -101,7 +102,7 @@ func createAdmin(ctx context.Context, dsn, email string, prompt io.Writer) error
 	}
 	defer func() { _ = conn.Close(ctx) }()
 	// An existing user keeps their password and is promoted.
-	_, err = sqlcgen.New(conn).UpsertUser(ctx, sqlcgen.UpsertUserParams{Email: email, PasswordHash: hash, IsPlatformAdmin: true})
+	_, err = sqlcgen.New(conn).UpsertUser(ctx, sqlcgen.UpsertUserParams{Name: name, Email: email, PasswordHash: hash, IsPlatformAdmin: true})
 	return err
 }
 

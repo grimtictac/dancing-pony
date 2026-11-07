@@ -30,27 +30,34 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 
 const createUser = `-- name: CreateUser :one
 
-INSERT INTO users (email, password_hash)
-VALUES ($1, $2)
-RETURNING id, email, is_platform_admin
+INSERT INTO users (name, email, password_hash)
+VALUES ($1, $2, $3)
+RETURNING id, name, email, is_platform_admin
 `
 
 type CreateUserParams struct {
+	Name         string
 	Email        string
 	PasswordHash string
 }
 
 type CreateUserRow struct {
 	ID              uuid.UUID
+	Name            string
 	Email           string
 	IsPlatformAdmin bool
 }
 
 // Users and sessions are global, not tenant-scoped: no restaurant is set.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createUser, arg.Name, arg.Email, arg.PasswordHash)
 	var i CreateUserRow
-	err := row.Scan(&i.ID, &i.Email, &i.IsPlatformAdmin)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.IsPlatformAdmin,
+	)
 	return i, err
 }
 
@@ -65,7 +72,7 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash []byte) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT u.id, u.email, u.is_platform_admin
+SELECT u.id, u.name, u.email, u.is_platform_admin
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = $1 AND s.expires_at > now()
@@ -73,6 +80,7 @@ WHERE s.token_hash = $1 AND s.expires_at > now()
 
 type GetSessionUserRow struct {
 	ID              uuid.UUID
+	Name            string
 	Email           string
 	IsPlatformAdmin bool
 }
@@ -80,18 +88,24 @@ type GetSessionUserRow struct {
 func (q *Queries) GetSessionUser(ctx context.Context, tokenHash []byte) (GetSessionUserRow, error) {
 	row := q.db.QueryRow(ctx, getSessionUser, tokenHash)
 	var i GetSessionUserRow
-	err := row.Scan(&i.ID, &i.Email, &i.IsPlatformAdmin)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.IsPlatformAdmin,
+	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, is_platform_admin
+SELECT id, name, email, password_hash, is_platform_admin
 FROM users
 WHERE email = $1
 `
 
 type GetUserByEmailRow struct {
 	ID              uuid.UUID
+	Name            string
 	Email           string
 	PasswordHash    string
 	IsPlatformAdmin bool
@@ -102,6 +116,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 	var i GetUserByEmailRow
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
 		&i.Email,
 		&i.PasswordHash,
 		&i.IsPlatformAdmin,
@@ -110,14 +125,15 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const upsertUser = `-- name: UpsertUser :one
-INSERT INTO users (email, password_hash, is_platform_admin)
-VALUES ($1, $2, $3)
+INSERT INTO users (name, email, password_hash, is_platform_admin)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (email) DO UPDATE
 SET is_platform_admin = users.is_platform_admin OR EXCLUDED.is_platform_admin
 RETURNING id
 `
 
 type UpsertUserParams struct {
+	Name            string
 	Email           string
 	PasswordHash    string
 	IsPlatformAdmin bool
@@ -126,7 +142,12 @@ type UpsertUserParams struct {
 // Schema owner only (pony seed, pony admin). Keeps an existing user's
 // password; only grants admin, never revokes it.
 func (q *Queries) UpsertUser(ctx context.Context, arg UpsertUserParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, upsertUser, arg.Email, arg.PasswordHash, arg.IsPlatformAdmin)
+	row := q.db.QueryRow(ctx, upsertUser,
+		arg.Name,
+		arg.Email,
+		arg.PasswordHash,
+		arg.IsPlatformAdmin,
+	)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err

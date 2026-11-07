@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"the-dancing-pony-v2/internal/auth"
 	"the-dancing-pony-v2/internal/id"
@@ -74,8 +75,19 @@ type credentials struct {
 	Password string `json:"password"`
 }
 
+// registration is the body of POST /auth/register.
+type registration struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// maxNameLength matches the users.name check in the database.
+const maxNameLength = 100
+
 type userResponse struct {
 	ID    string `json:"id"`
+	Name  string `json:"name"`
 	Email string `json:"email"`
 }
 
@@ -101,8 +113,13 @@ func (a *api) register(w http.ResponseWriter, r *http.Request) {
 	}
 	a.throttleFail(r, a.registerByIP, "register_ip", ip, slog.String("ip", ip))
 
-	in, ok := decodeJSON[credentials](w, r)
+	in, ok := decodeJSON[registration](w, r)
 	if !ok {
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" || utf8.RuneCountInString(name) > maxNameLength {
+		writeProblem(w, http.StatusBadRequest, "name is required (1 to 100 characters)")
 		return
 	}
 	email, ok := normaliseEmail(in.Email)
@@ -119,7 +136,7 @@ func (a *api) register(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	u, err := a.store.CreateUser(r.Context(), email, hash)
+	u, err := a.store.CreateUser(r.Context(), name, email, hash)
 	if errors.Is(err, store.ErrConflict) {
 		// Reveals that the email is registered: a documented trade-off
 		// (D10). Registration is throttled per IP to limit probing.
@@ -130,7 +147,7 @@ func (a *api) register(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, userResponse{ID: id.Encode(u.ID), Email: u.Email})
+	writeJSON(w, http.StatusCreated, userResponse{ID: id.Encode(u.ID), Name: u.Name, Email: u.Email})
 }
 
 // login handles POST /auth/login and returns a new session token.
@@ -207,7 +224,7 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 // me handles GET /auth/me.
 func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r.Context())
-	writeJSON(w, http.StatusOK, userResponse{ID: id.Encode(u.ID), Email: u.Email})
+	writeJSON(w, http.StatusOK, userResponse{ID: id.Encode(u.ID), Name: u.Name, Email: u.Email})
 }
 
 // tooManyRequests replies 429 at once with Retry-After, rather than

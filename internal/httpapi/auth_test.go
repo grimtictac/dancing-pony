@@ -10,14 +10,14 @@ import (
 func TestRegisterLoginLogout(t *testing.T) {
 	h := newAPI(t)
 
-	rec := do(t, h.raw, http.MethodPost, "/auth/register", `{"email":"  Pippin@Shire.example ","password":"second breakfast"}`)
+	rec := do(t, h.raw, http.MethodPost, "/auth/register", `{"name":" Peregrin Took ","email":"  Pippin@Shire.example ","password":"second breakfast"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("register: status %d, body %s", rec.Code, rec.Body)
 	}
-	if got := decode[userResponse](t, rec); got.Email != "pippin@shire.example" {
-		t.Errorf("email = %q, want it trimmed and lower-cased", got.Email)
+	if got := decode[userResponse](t, rec); got.Email != "pippin@shire.example" || got.Name != "Peregrin Took" {
+		t.Errorf("got %+v, want name and email trimmed, email lower-cased", got)
 	}
-	if rec := do(t, h.raw, http.MethodPost, "/auth/register", `{"email":"pippin@shire.example","password":"another password"}`); rec.Code != http.StatusConflict {
+	if rec := do(t, h.raw, http.MethodPost, "/auth/register", `{"name":"Pippin","email":"pippin@shire.example","password":"another password"}`); rec.Code != http.StatusConflict {
 		t.Errorf("duplicate register: status %d, want 409", rec.Code)
 	}
 
@@ -43,10 +43,12 @@ func TestRegisterLoginLogout(t *testing.T) {
 func TestRegisterValidation(t *testing.T) {
 	h := newAPI(t)
 	for name, body := range map[string]string{ //nolint:gosec // G101: test inputs, not credentials
-		"short password":    `{"email":"a@b.example","password":"short"}`,
-		"long password":     `{"email":"a@b.example","password":"` + strings.Repeat("x", 300) + `"}`,
-		"not an email":      `{"email":"not-an-email","password":"long enough password"}`,
-		"display-name form": `{"email":"Frodo <f@shire.example>","password":"long enough password"}`,
+		"no name":           `{"email":"a@b.example","password":"long enough password"}`,
+		"blank name":        `{"name":"   ","email":"a@b.example","password":"long enough password"}`,
+		"short password":    `{"name":"A","email":"a@b.example","password":"short"}`,
+		"long password":     `{"name":"A","email":"a@b.example","password":"` + strings.Repeat("x", 300) + `"}`,
+		"not an email":      `{"name":"A","email":"not-an-email","password":"long enough password"}`,
+		"display-name form": `{"name":"A","email":"Frodo <f@shire.example>","password":"long enough password"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if rec := do(t, h.raw, http.MethodPost, "/auth/register", body); rec.Code != http.StatusBadRequest {

@@ -27,7 +27,7 @@ import (
 // Every dish method is scoped to one restaurant.
 type Store interface {
 	Ping(ctx context.Context) error
-	CreateUser(ctx context.Context, email, passwordHash string) (auth.User, error)
+	CreateUser(ctx context.Context, name, email, passwordHash string) (auth.User, error)
 	UserByEmail(ctx context.Context, email string) (auth.User, string, error)
 	CreateSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expires time.Time) error
 	UserBySession(ctx context.Context, tokenHash []byte) (auth.User, error)

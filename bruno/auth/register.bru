@@ -12,6 +12,7 @@ post {
 
 body:json {
   {
+    "name": "Peregrin Took",
     "email": "{{newEmail}}",
     "password": "a long enough password"
   }
@@ -22,10 +23,11 @@ script:pre-request {
 }
 
 docs {
-  Passwords: 12 to 128 characters, no composition rules. An email that is
+  Name: 1 to 100 characters. Passwords: 12 to 128 characters, no composition rules. An email that is
   already registered gets 409.
 }
 
 assert {
   res.status: eq 201
+  res.body.name: eq "Peregrin Took"
 }

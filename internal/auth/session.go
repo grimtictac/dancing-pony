@@ -16,6 +16,7 @@ const SessionTTL = 30 * 24 * time.Hour
 // restaurant depends on their membership there.
 type User struct {
 	ID            uuid.UUID
+	Name          string
 	Email         string
 	PlatformAdmin bool
 }

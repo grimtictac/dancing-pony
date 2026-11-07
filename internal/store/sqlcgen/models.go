@@ -79,4 +79,5 @@ type User struct {
 	PasswordHash    string
 	IsPlatformAdmin bool
 	CreatedAt       time.Time
+	Name            string
 }

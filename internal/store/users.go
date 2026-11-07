@@ -22,8 +22,8 @@ var ErrConflict = errors.New("already exists")
 const pgUniqueViolation = "23505"
 
 // CreateUser registers a user. email must already be normalised.
-func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (auth.User, error) {
-	row, err := s.q.CreateUser(ctx, sqlcgen.CreateUserParams{Email: email, PasswordHash: passwordHash})
+func (s *Store) CreateUser(ctx context.Context, name, email, passwordHash string) (auth.User, error) {
+	row, err := s.q.CreateUser(ctx, sqlcgen.CreateUserParams{Name: name, Email: email, PasswordHash: passwordHash})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
 		return auth.User{}, ErrConflict
@@ -31,7 +31,7 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (aut
 	if err != nil {
 		return auth.User{}, fmt.Errorf("create user: %w", err)
 	}
-	return auth.User{ID: row.ID, Email: row.Email, PlatformAdmin: row.IsPlatformAdmin}, nil
+	return auth.User{ID: row.ID, Name: row.Name, Email: row.Email, PlatformAdmin: row.IsPlatformAdmin}, nil
 }
 
 // UserByEmail returns the user with this (normalised) email and their
@@ -44,7 +44,7 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (auth.User, strin
 	if err != nil {
 		return auth.User{}, "", fmt.Errorf("get user: %w", err)
 	}
-	return auth.User{ID: row.ID, Email: row.Email, PlatformAdmin: row.IsPlatformAdmin}, row.PasswordHash, nil
+	return auth.User{ID: row.ID, Name: row.Name, Email: row.Email, PlatformAdmin: row.IsPlatformAdmin}, row.PasswordHash, nil
 }
 
 // CreateSession stores the hash of a new session token for a user.
@@ -64,7 +64,7 @@ func (s *Store) UserBySession(ctx context.Context, tokenHash []byte) (auth.User,
 	if err != nil {
 		return auth.User{}, fmt.Errorf("get session: %w", err)
 	}
-	return auth.User{ID: row.ID, Email: row.Email, PlatformAdmin: row.IsPlatformAdmin}, nil
+	return auth.User{ID: row.ID, Name: row.Name, Email: row.Email, PlatformAdmin: row.IsPlatformAdmin}, nil
 }
 
 // DeleteSession ends a session (logout). Ending one that doesn't exist is
