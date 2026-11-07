@@ -41,12 +41,28 @@ func New(s Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.root)
 	mux.HandleFunc("GET /health", a.health)
-	mux.HandleFunc("GET /restaurants/{slug}/dishes", a.inRestaurant(a.listDishes))
-	mux.HandleFunc("POST /restaurants/{slug}/dishes", a.inRestaurant(a.createDish))
-	mux.HandleFunc("GET /restaurants/{slug}/dishes/{id}", a.inRestaurant(a.getDish))
-	mux.HandleFunc("PUT /restaurants/{slug}/dishes/{id}", a.inRestaurant(a.updateDish))
-	mux.HandleFunc("DELETE /restaurants/{slug}/dishes/{id}", a.inRestaurant(a.deleteDish))
+	for _, rt := range a.tenantRoutes() {
+		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.handler))
+	}
 	return router{mux: mux}
+}
+
+// tenantRoute is a route within one restaurant.
+type tenantRoute struct {
+	pattern string
+	handler restaurantHandler
+}
+
+// tenantRoutes lists every route that works within a restaurant. The
+// tenant-isolation tests fail for any route here they don't cover.
+func (a *api) tenantRoutes() []tenantRoute {
+	return []tenantRoute{
+		{"GET /restaurants/{slug}/dishes", a.listDishes},
+		{"POST /restaurants/{slug}/dishes", a.createDish},
+		{"GET /restaurants/{slug}/dishes/{id}", a.getDish},
+		{"PUT /restaurants/{slug}/dishes/{id}", a.updateDish},
+		{"DELETE /restaurants/{slug}/dishes/{id}", a.deleteDish},
+	}
 }
 
 // restaurantHandler handles a request within one restaurant (tenant).
