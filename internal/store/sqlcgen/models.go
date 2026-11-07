@@ -21,6 +21,7 @@ type Dish struct {
 	ImageUrl      string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	Search        interface{}
 }
 
 type DishPhoto struct {

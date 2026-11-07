@@ -4,7 +4,7 @@
 -- name: CreateDish :one
 INSERT INTO dishes (restaurant_id, name, description, price_amount, price_currency, image_url)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING *;
+RETURNING id;
 
 -- name: UpdateDish :one
 UPDATE dishes
@@ -15,7 +15,7 @@ SET name           = $3,
     image_url      = $7,
     updated_at     = now()
 WHERE restaurant_id = $1 AND id = $2
-RETURNING *;
+RETURNING id;
 
 -- name: DeleteDish :execrows
 DELETE FROM dishes

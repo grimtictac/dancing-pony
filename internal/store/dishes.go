@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"the-dancing-pony-v2/internal/dish"
-	"the-dancing-pony-v2/internal/id"
 	"the-dancing-pony-v2/internal/store/sqlcgen"
 )
 
@@ -25,9 +24,9 @@ func (s *Store) GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (di
 
 // CreateDish adds a dish to a restaurant. Any ID in d is ignored.
 func (s *Store) CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.Dish) (dish.Dish, error) {
-	var r sqlcgen.Dish
-	err := s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
-		r, err = q.CreateDish(ctx, sqlcgen.CreateDishParams{
+	var r dishRow
+	err := s.inTenantTx(ctx, restaurantID, pgx.ReadWrite, func(tx pgx.Tx) error {
+		dishID, err := s.q.WithTx(tx).CreateDish(ctx, sqlcgen.CreateDishParams{
 			RestaurantID:  restaurantID,
 			Name:          d.Name,
 			Description:   d.Description,
@@ -35,9 +34,14 @@ func (s *Store) CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.D
 			PriceCurrency: d.Price.Currency,
 			ImageUrl:      d.Image,
 		})
+		if err != nil {
+			return err
+		}
+		// Read it back like every other dish, in the same transaction.
+		r, err = getDishRow(ctx, tx, restaurantID, dishID)
 		return err
 	})
-	return result(r, err, "create dish")
+	return rowResult(r, err, "create dish")
 }
 
 // UpdateDish replaces one of a restaurant's dishes, or returns ErrNotFound.
@@ -87,16 +91,6 @@ func (s *Store) DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) 
 	return photoKey, nil
 }
 
-func result(r sqlcgen.Dish, err error, op string) (dish.Dish, error) {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return dish.Dish{}, ErrNotFound
-	}
-	if err != nil {
-		return dish.Dish{}, fmt.Errorf("%s: %w", op, err)
-	}
-	return toDish(r), nil
-}
-
 func rowResult(r dishRow, err error, op string) (dish.Dish, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return dish.Dish{}, ErrNotFound
@@ -105,14 +99,4 @@ func rowResult(r dishRow, err error, op string) (dish.Dish, error) {
 		return dish.Dish{}, fmt.Errorf("%s: %w", op, err)
 	}
 	return r.toDish(), nil
-}
-
-func toDish(r sqlcgen.Dish) dish.Dish {
-	return dish.Dish{
-		ID:          id.Encode(r.ID),
-		Name:        r.Name,
-		Description: r.Description,
-		Price:       dish.Money{Amount: r.PriceAmount, Currency: r.PriceCurrency},
-		Image:       r.ImageUrl,
-	}
 }

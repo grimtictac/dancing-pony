@@ -28,7 +28,7 @@ const createDish = `-- name: CreateDish :one
 
 INSERT INTO dishes (restaurant_id, name, description, price_amount, price_currency, image_url)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING restaurant_id, id, name, description, price_amount, price_currency, image_url, created_at, updated_at
+RETURNING id
 `
 
 type CreateDishParams struct {
@@ -42,7 +42,7 @@ type CreateDishParams struct {
 
 // Every query names its restaurant explicitly. Row-Level Security is a
 // second, independent guard, not a replacement for these conditions.
-func (q *Queries) CreateDish(ctx context.Context, arg CreateDishParams) (Dish, error) {
+func (q *Queries) CreateDish(ctx context.Context, arg CreateDishParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, createDish,
 		arg.RestaurantID,
 		arg.Name,
@@ -51,19 +51,9 @@ func (q *Queries) CreateDish(ctx context.Context, arg CreateDishParams) (Dish, e
 		arg.PriceCurrency,
 		arg.ImageUrl,
 	)
-	var i Dish
-	err := row.Scan(
-		&i.RestaurantID,
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.PriceAmount,
-		&i.PriceCurrency,
-		&i.ImageUrl,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteDish = `-- name: DeleteDish :execrows
@@ -93,7 +83,7 @@ SET name           = $3,
     image_url      = $7,
     updated_at     = now()
 WHERE restaurant_id = $1 AND id = $2
-RETURNING restaurant_id, id, name, description, price_amount, price_currency, image_url, created_at, updated_at
+RETURNING id
 `
 
 type UpdateDishParams struct {
@@ -106,7 +96,7 @@ type UpdateDishParams struct {
 	ImageUrl      string
 }
 
-func (q *Queries) UpdateDish(ctx context.Context, arg UpdateDishParams) (Dish, error) {
+func (q *Queries) UpdateDish(ctx context.Context, arg UpdateDishParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, updateDish,
 		arg.RestaurantID,
 		arg.ID,
@@ -116,17 +106,7 @@ func (q *Queries) UpdateDish(ctx context.Context, arg UpdateDishParams) (Dish, e
 		arg.PriceCurrency,
 		arg.ImageUrl,
 	)
-	var i Dish
-	err := row.Scan(
-		&i.RestaurantID,
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.PriceAmount,
-		&i.PriceCurrency,
-		&i.ImageUrl,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }

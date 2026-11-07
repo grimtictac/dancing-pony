@@ -144,7 +144,7 @@ func buildDishList(restaurantID uuid.UUID, opts ListOptions) (string, []any, sor
 		p := arg(opts.Search)
 		// Go note: %[1]s reuses the first argument, so p appears twice.
 		// %% is a literal %, giving pg_trgm's "<%" (word similarity) operator.
-		fmt.Fprintf(&b, "\n  AND (dish_search_vector(name, description) @@ websearch_to_tsquery('english', %[1]s)\n       OR %[1]s <%% name)", p)
+		fmt.Fprintf(&b, "\n  AND (d.search @@ websearch_to_tsquery('english', %[1]s)\n       OR %[1]s <%% name)", p)
 	}
 	if opts.MinPrice > 0 {
 		b.WriteString("\n  AND price_amount >= " + arg(opts.MinPrice))
