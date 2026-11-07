@@ -3,11 +3,13 @@ auth {
 }
 
 auth:bearer {
-  token: {{ownerToken}}
+  token: {{token}}
 }
 
 docs {
-  Requests inherit The Orc Shack owner's token (ownerToken), set by the Auth
-  folder. Run Auth first. Demo users and their password come from
-  `pony seed` (local only).
+  Requests inherit {{token}}: whoever logged in last. Each login in the Auth
+  folder also keeps its own token (ownerToken, frodoToken, ...) for requests
+  that must act as a particular user. Running the whole Auth folder logs in
+  The Orc Shack owner last, so the other folders run as the owner.
+  Demo users and their password come from `pony seed`.
 }

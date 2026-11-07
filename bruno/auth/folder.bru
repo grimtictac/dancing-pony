@@ -6,5 +6,7 @@ meta {
 docs {
   Logs in the demo users and stores their tokens for the other folders:
   ownerToken (orc-shack owner), dragonOwnerToken, frodoToken and samToken
-  (customers). Tokens are opaque: send them as Authorization: Bearer.
+  (customers). Each login also sets {{token}}, which every request inherits,
+  so by hand you act as whoever logged in last. The owner logs in last.
+  Tokens are opaque: send them as Authorization: Bearer.
 }

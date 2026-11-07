@@ -1,7 +1,7 @@
 meta {
   name: Log in (Sam)
   type: http
-  seq: 4
+  seq: 3
 }
 
 post {
@@ -19,6 +19,7 @@ body:json {
 
 vars:post-response {
   samToken: res.body.token
+  token: res.body.token
 }
 
 assert {

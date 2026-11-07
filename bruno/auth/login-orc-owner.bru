@@ -1,7 +1,7 @@
 meta {
   name: Log in (Orc Shack owner)
   type: http
-  seq: 1
+  seq: 4
 }
 
 post {
@@ -19,6 +19,7 @@ body:json {
 
 vars:post-response {
   ownerToken: res.body.token
+  token: res.body.token
 }
 
 assert {

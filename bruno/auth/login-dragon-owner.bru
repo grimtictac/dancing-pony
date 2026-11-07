@@ -1,7 +1,7 @@
 meta {
   name: Log in (Green Dragon owner)
   type: http
-  seq: 2
+  seq: 1
 }
 
 post {
@@ -19,6 +19,7 @@ body:json {
 
 vars:post-response {
   dragonOwnerToken: res.body.token
+  token: res.body.token
 }
 
 assert {
