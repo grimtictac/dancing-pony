@@ -1,0 +1,30 @@
+meta {
+  name: Unknown field
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Stew",
+    "description": "Rabbit stew.",
+    "prise": { "amount": 9500, "currency": "ZAR" },
+    "image": "https://example.com/stew.jpg"
+  }
+}
+
+docs {
+  Unknown fields are rejected rather than silently ignored, so a typo
+  ("prise") is caught. Bodies over 64 KiB get 413.
+}
+
+assert {
+  res.status: eq 400
+  res.body.detail: eq "unknown field \"prise\""
+}

@@ -175,21 +175,6 @@ func dishFound(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
-// decodeDish reads and validates a dish from the request body. On failure it
-// writes a 400 problem response and returns false.
-func decodeDish(w http.ResponseWriter, r *http.Request, rest tenant.Restaurant) (dish.Dish, bool) {
-	var input dish.Dish
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid JSON")
-		return dish.Dish{}, false
-	}
-	if err := dish.Validate(input, rest.Currency); err != nil {
-		writeProblem(w, http.StatusBadRequest, err.Error())
-		return dish.Dish{}, false
-	}
-	return input, true
-}
-
 // internalError logs err and sends a 500 without its details.
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
