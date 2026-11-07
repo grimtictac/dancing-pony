@@ -17,6 +17,9 @@ linters:
   settings:
     misspell:
       locale: UK
+      # Deliberate typo used to test typo-tolerant search.
+      ignore-rules:
+        - mushrom
   exclusions:
     rules:
       # Test helpers create their own contexts on purpose; there is no

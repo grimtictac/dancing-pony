@@ -1,0 +1,30 @@
+meta {
+  name: Filter, sort and page
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes?max_price=20000&sort=-price&limit=1
+  body: none
+  auth: none
+}
+
+params:query {
+  max_price: 20000
+  sort: -price
+  limit: 1
+}
+
+docs {
+  Filters: min_price, max_price (minor units). Sort: name, -name, price,
+  -price (default: oldest first). Pages: limit (1-100, default 20); the
+  next page's URL is in the Link header (rel="next").
+}
+
+assert {
+  res.status: eq 200
+  res.body.length: eq 1
+  res.body[0].name: eq "Mushroom Pie"
+  res.headers.link: contains "rel=\"next\""
+}

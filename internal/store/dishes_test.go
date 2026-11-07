@@ -47,7 +47,7 @@ func TestDishCRUD(t *testing.T) {
 		t.Errorf("updated = %+v, want same ID and amount 4999", updated)
 	}
 
-	if list, err := s.ListDishes(ctx, shack); err != nil || len(list) != 1 || list[0] != updated {
+	if list, _, err := s.ListDishes(ctx, shack, store.ListOptions{}); err != nil || len(list) != 1 || list[0] != updated {
 		t.Errorf("ListDishes = %+v, %v; want [%+v]", list, err, updated)
 	}
 
@@ -66,7 +66,7 @@ func TestListDishesIsEmptyNotNil(t *testing.T) {
 	db := storetest.Migrated(t)
 	shack := addRestaurant(t, openDB(t, db.OwnerURL), "orc-shack", "ZAR")
 
-	list, err := openStore(t, db.AppURL).ListDishes(context.Background(), shack)
+	list, _, err := openStore(t, db.AppURL).ListDishes(context.Background(), shack, store.ListOptions{})
 	if err != nil || list == nil || len(list) != 0 {
 		t.Errorf("ListDishes = %#v, %v; want an empty, non-nil slice", list, err)
 	}
@@ -86,7 +86,7 @@ func TestDishesAreScopedToTheirRestaurant(t *testing.T) {
 	}
 	dishID, _ := id.Decode(d.ID)
 
-	if list, _ := s.ListDishes(ctx, dragon); len(list) != 0 {
+	if list, _, _ := s.ListDishes(ctx, dragon, store.ListOptions{}); len(list) != 0 {
 		t.Errorf("green-dragon lists %d dishes, want 0", len(list))
 	}
 	if _, err := s.GetDish(ctx, dragon, dishID); !errors.Is(err, store.ErrNotFound) {

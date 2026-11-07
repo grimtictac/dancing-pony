@@ -1,12 +1,6 @@
 -- Every query names its restaurant explicitly. Row-Level Security is a
 -- second, independent guard, not a replacement for these conditions.
 
--- name: ListDishes :many
-SELECT *
-FROM dishes
-WHERE restaurant_id = $1
-ORDER BY id;
-
 -- name: GetDish :one
 SELECT *
 FROM dishes

@@ -20,7 +20,7 @@ import (
 // Every dish method is scoped to one restaurant.
 type Store interface {
 	RestaurantBySlug(ctx context.Context, slug string) (tenant.Restaurant, error)
-	ListDishes(ctx context.Context, restaurantID uuid.UUID) ([]dish.Dish, error)
+	ListDishes(ctx context.Context, restaurantID uuid.UUID, opts store.ListOptions) ([]dish.Dish, string, error)
 	GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error)
 	CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.Dish) (dish.Dish, error)
 	UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, d dish.Dish) (dish.Dish, error)
@@ -92,15 +92,6 @@ func (a *api) root(w http.ResponseWriter, _ *http.Request) {
 
 func (a *api) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (a *api) listDishes(w http.ResponseWriter, r *http.Request, rest tenant.Restaurant) {
-	dishes, err := a.store.ListDishes(r.Context(), rest.ID)
-	if err != nil {
-		internalError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, dishes)
 }
 
 func (a *api) getDish(w http.ResponseWriter, r *http.Request, rest tenant.Restaurant) {

@@ -1,0 +1,26 @@
+meta {
+  name: Search dishes (typo)
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes?q=mushrom
+  body: none
+  auth: none
+}
+
+params:query {
+  q: mushrom
+}
+
+docs {
+  Full-text search on names and descriptions, plus typo-tolerant matching
+  on names: "mushrom" still finds Mushroom Pie.
+}
+
+assert {
+  res.status: eq 200
+  res.body.length: eq 1
+  res.body[0].name: eq "Mushroom Pie"
+}

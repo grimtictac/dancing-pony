@@ -82,6 +82,7 @@ func (q *Queries) DeleteDish(ctx context.Context, arg DeleteDishParams) (int64, 
 }
 
 const getDish = `-- name: GetDish :one
+
 SELECT restaurant_id, id, name, description, price_amount, price_currency, image_url, created_at, updated_at
 FROM dishes
 WHERE restaurant_id = $1 AND id = $2
@@ -92,6 +93,8 @@ type GetDishParams struct {
 	ID           uuid.UUID
 }
 
+// Every query names its restaurant explicitly. Row-Level Security is a
+// second, independent guard, not a replacement for these conditions.
 func (q *Queries) GetDish(ctx context.Context, arg GetDishParams) (Dish, error) {
 	row := q.db.QueryRow(ctx, getDish, arg.RestaurantID, arg.ID)
 	var i Dish
@@ -107,46 +110,6 @@ func (q *Queries) GetDish(ctx context.Context, arg GetDishParams) (Dish, error) 
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const listDishes = `-- name: ListDishes :many
-
-SELECT restaurant_id, id, name, description, price_amount, price_currency, image_url, created_at, updated_at
-FROM dishes
-WHERE restaurant_id = $1
-ORDER BY id
-`
-
-// Every query names its restaurant explicitly. Row-Level Security is a
-// second, independent guard, not a replacement for these conditions.
-func (q *Queries) ListDishes(ctx context.Context, restaurantID uuid.UUID) ([]Dish, error) {
-	rows, err := q.db.Query(ctx, listDishes, restaurantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Dish{}
-	for rows.Next() {
-		var i Dish
-		if err := rows.Scan(
-			&i.RestaurantID,
-			&i.ID,
-			&i.Name,
-			&i.Description,
-			&i.PriceAmount,
-			&i.PriceCurrency,
-			&i.ImageUrl,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const updateDish = `-- name: UpdateDish :one

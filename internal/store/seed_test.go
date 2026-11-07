@@ -38,7 +38,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", sr.Slug, err)
 		}
-		dishes, err := s.ListDishes(ctx, r.ID)
+		dishes, _, err := s.ListDishes(ctx, r.ID, store.ListOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -13,23 +13,6 @@ import (
 	"the-dancing-pony-v2/internal/store/sqlcgen"
 )
 
-// ListDishes returns a restaurant's dishes, oldest first.
-func (s *Store) ListDishes(ctx context.Context, restaurantID uuid.UUID) ([]dish.Dish, error) {
-	var rows []sqlcgen.Dish
-	err := s.inTenant(ctx, restaurantID, pgx.ReadOnly, func(q *sqlcgen.Queries) (err error) {
-		rows, err = q.ListDishes(ctx, restaurantID)
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list dishes: %w", err)
-	}
-	dishes := make([]dish.Dish, len(rows))
-	for i, r := range rows {
-		dishes[i] = toDish(r)
-	}
-	return dishes, nil
-}
-
 // GetDish returns one of a restaurant's dishes, or ErrNotFound.
 func (s *Store) GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error) {
 	var r sqlcgen.Dish

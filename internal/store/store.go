@@ -81,12 +81,21 @@ func checkUnprivileged(ctx context.Context, pool *pgxpool.Pool) error {
 func (s *Store) inTenant(ctx context.Context, restaurantID uuid.UUID, access pgx.TxAccessMode,
 	fn func(*sqlcgen.Queries) error,
 ) error {
+	return s.inTenantTx(ctx, restaurantID, access, func(tx pgx.Tx) error {
+		return fn(s.q.WithTx(tx))
+	})
+}
+
+// inTenantTx is inTenant for hand-written queries that need the transaction
+// itself rather than the generated sqlc methods.
+func (s *Store) inTenantTx(ctx context.Context, restaurantID uuid.UUID, access pgx.TxAccessMode,
+	fn func(pgx.Tx) error,
+) error {
 	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{AccessMode: access}, func(tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
-		if err := q.SetTenant(ctx, restaurantID); err != nil {
+		if err := s.q.WithTx(tx).SetTenant(ctx, restaurantID); err != nil {
 			return fmt.Errorf("set tenant: %w", err)
 		}
-		return fn(q)
+		return fn(tx)
 	})
 }
 
