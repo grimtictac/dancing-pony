@@ -76,6 +76,12 @@ func (a *api) putReview(w http.ResponseWriter, r *http.Request, rest tenant.Rest
 		internalError(w, r, err)
 		return
 	}
+	label := ""
+	if sent != nil {
+		label = sent.Label
+	}
+	a.metrics.reviewWritten(created, label)
+
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated

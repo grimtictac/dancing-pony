@@ -42,7 +42,9 @@ func info(ctx context.Context) *reqInfo {
 // PONY_LOG_LEVEL=debug; server errors at ERROR. Query strings, bodies and
 // headers are never logged: they may carry search terms, tokens or
 // passwords.
-func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
+//
+// It also records the request in m (which may be nil).
+func accessLog(logger *slog.Logger, m *Metrics, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ri := &reqInfo{ID: requestID(r)}
@@ -51,13 +53,16 @@ func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r.WithContext(context.WithValue(r.Context(), reqInfoKey{}, ri)))
 
+		elapsed := time.Since(start)
+		m.observe(r.Method, ri.Route, sw.status, elapsed)
+
 		attrs := []slog.Attr{
 			slog.String("request_id", ri.ID),
 			slog.String("method", r.Method),
 			slog.String("route", ri.Route),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", sw.status),
-			slog.Float64("duration_ms", float64(time.Since(start).Microseconds())/1000),
+			slog.Float64("duration_ms", float64(elapsed.Microseconds())/1000),
 			slog.Int("bytes", sw.bytes),
 		}
 		if ri.Restaurant != "" {

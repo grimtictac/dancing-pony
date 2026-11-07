@@ -33,16 +33,19 @@ type Store interface {
 }
 
 type api struct {
-	store  Store
-	scorer sentiment.Scorer
+	store   Store
+	scorer  sentiment.Scorer
+	metrics *Metrics
 }
 
 // New returns the HTTP handler for the API. Routes use the standard library's
 // method and wildcard patterns, so unsupported methods get a 405 with an
 // Allow header and unknown paths get a 404. All errors are RFC 9457
 // application/problem+json.
-func New(s Store, logger *slog.Logger) http.Handler {
-	a := &api{store: s, scorer: sentiment.WordList{}}
+//
+// m may be nil, to record no metrics.
+func New(s Store, logger *slog.Logger, m *Metrics) http.Handler {
+	a := &api{store: s, scorer: sentiment.WordList{}, metrics: m}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.root)
@@ -50,7 +53,7 @@ func New(s Store, logger *slog.Logger) http.Handler {
 	for _, rt := range a.tenantRoutes() {
 		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.handler))
 	}
-	return accessLog(logger, router{mux: mux})
+	return accessLog(logger, m, router{mux: mux})
 }
 
 // tenantRoute is a route within one restaurant.

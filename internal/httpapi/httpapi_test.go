@@ -28,7 +28,7 @@ func newAPI(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	return New(s, slog.New(slog.DiscardHandler))
+	return New(s, slog.New(slog.DiscardHandler), nil)
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {

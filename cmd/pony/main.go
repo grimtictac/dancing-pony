@@ -15,6 +15,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"the-dancing-pony-v2/internal/httpapi"
 	"the-dancing-pony-v2/internal/store"
 )
@@ -31,12 +35,15 @@ Environment:
   PONY_ADDR                   listen address for serve (default 127.0.0.1:8080)
   PONY_DATABASE_URL           Postgres URL for serve, as the pony_app role
   PONY_LOG_LEVEL              debug, info (default), warn or error
+  PONY_INTERNAL_ADDR          listen address for /metrics (default 127.0.0.1:9091);
+                              never expose it publicly
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
 `
 
 const (
-	defaultAddr     = "127.0.0.1:8080"
-	shutdownTimeout = 15 * time.Second
+	defaultAddr         = "127.0.0.1:8080"
+	defaultInternalAddr = "127.0.0.1:9091"
+	shutdownTimeout     = 15 * time.Second
 )
 
 func main() {
@@ -75,16 +82,23 @@ type config struct {
 	// LogLevel is the minimum level logged. At info, reads (GETs) are not
 	// logged; debug logs every request.
 	LogLevel string
+	// InternalAddr serves operational endpoints (/metrics) on a separate
+	// listener that the reverse proxy never forwards to.
+	InternalAddr string
 }
 
 func loadConfig(getenv func(string) string) config {
 	cfg := config{
-		Addr:        defaultAddr,
-		DatabaseURL: getenv("PONY_DATABASE_URL"),
-		LogLevel:    getenv("PONY_LOG_LEVEL"),
+		Addr:         defaultAddr,
+		DatabaseURL:  getenv("PONY_DATABASE_URL"),
+		LogLevel:     getenv("PONY_LOG_LEVEL"),
+		InternalAddr: defaultInternalAddr,
 	}
 	if v := getenv("PONY_ADDR"); v != "" {
 		cfg.Addr = v
+	}
+	if v := getenv("PONY_INTERNAL_ADDR"); v != "" {
+		cfg.InternalAddr = v
 	}
 	return cfg
 }
@@ -133,7 +147,32 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	}
 	defer db.Close()
 
-	if err := runServer(ctx, newServer(httpapi.New(db, logger), logger), ln, logger); err != nil {
+	internalLn, err := lc.Listen(ctx, "tcp", cfg.InternalAddr)
+	if err != nil {
+		_ = ln.Close()
+		logger.Error("listen failed", "addr", cfg.InternalAddr, "err", err)
+		return 1
+	}
+	logger.Info("internal listener (metrics)", "addr", internalLn.Addr().String())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	api := httpapi.New(db, logger, httpapi.NewMetrics(reg))
+	internalMux := http.NewServeMux()
+	internalMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+
+	// Go note: "go f()" runs f concurrently in a goroutine. The buffered
+	// channel carries its result back; receiving from it (<-internalDone)
+	// waits until the goroutine has sent.
+	internalDone := make(chan error, 1)
+	go func() { internalDone <- runServer(ctx, newServer(internalMux, logger), internalLn, logger) }()
+
+	err = runServer(ctx, newServer(api, logger), ln, logger)
+	stop() // if the API server failed, stop the internal one too
+	if ierr := <-internalDone; err == nil {
+		err = ierr
+	}
+	if err != nil {
 		logger.Error("server stopped with error", "err", err)
 		return 1
 	}

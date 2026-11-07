@@ -23,7 +23,7 @@ func TestAccessLog(t *testing.T) {
 	mux.HandleFunc("GET /boom", func(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, errors.New("database on fire"))
 	})
-	h := accessLog(logger, router{mux: mux})
+	h := accessLog(logger, nil, router{mux: mux})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/things/42?secret=token", nil)
 	req.Header.Set(requestIDHeader, "trace-123")
