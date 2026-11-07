@@ -19,14 +19,14 @@ func TestSeedDishPriceIsInMinorUnits(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	want := Money{Amount: 850, Currency: "GBP"}
+	want := Money{Amount: 8500, Currency: "ZAR"}
 	if got.Price != want {
 		t.Errorf("price = %+v, want %+v", got.Price, want)
 	}
 }
 
 func TestCreateDishAcceptsMinorUnitPrice(t *testing.T) {
-	body := `{"name":"Lembas","description":"Elven waybread.","price":{"amount":1250,"currency":"GBP"},"image":"https://example.com/lembas.jpg"}`
+	body := `{"name":"Lembas","description":"Elven waybread.","price":{"amount":12500,"currency":"ZAR"},"image":"https://example.com/lembas.jpg"}`
 	rec := httptest.NewRecorder()
 	dishesHandler(rec, httptest.NewRequest(http.MethodPost, "/dishes", strings.NewReader(body)))
 
@@ -37,7 +37,7 @@ func TestCreateDishAcceptsMinorUnitPrice(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	want := Money{Amount: 1250, Currency: "GBP"}
+	want := Money{Amount: 12500, Currency: "ZAR"}
 	if got.Price != want {
 		t.Errorf("price = %+v, want %+v", got.Price, want)
 	}
@@ -49,11 +49,11 @@ func TestCreateDishRejectsInvalidPrice(t *testing.T) {
 		price string
 	}{
 		{"float price", `8.5`},
-		{"fractional amount", `{"amount":8.5,"currency":"GBP"}`},
-		{"zero amount", `{"amount":0,"currency":"GBP"}`},
-		{"negative amount", `{"amount":-100,"currency":"GBP"}`},
-		{"missing currency", `{"amount":850}`},
-		{"unsupported currency", `{"amount":850,"currency":"USD"}`},
+		{"fractional amount", `{"amount":8.5,"currency":"ZAR"}`},
+		{"zero amount", `{"amount":0,"currency":"ZAR"}`},
+		{"negative amount", `{"amount":-100,"currency":"ZAR"}`},
+		{"missing currency", `{"amount":8500}`},
+		{"unsupported currency", `{"amount":8500,"currency":"GBP"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
