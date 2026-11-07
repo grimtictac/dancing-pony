@@ -5,6 +5,7 @@ package dish
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -75,13 +76,18 @@ func Seed() []Dish {
 type MemoryStore struct {
 	mu     sync.RWMutex
 	dishes map[string]Dish
+	nextID int
 }
 
-// NewMemoryStore returns a store containing the given dishes.
+// NewMemoryStore returns a store containing the given dishes. New dishes get
+// IDs above the highest numeric seed ID, so they never collide.
 func NewMemoryStore(seed ...Dish) *MemoryStore {
-	s := &MemoryStore{dishes: make(map[string]Dish, len(seed))}
+	s := &MemoryStore{dishes: make(map[string]Dish, len(seed)), nextID: 1}
 	for _, d := range seed {
 		s.dishes[d.ID] = d
+		if n, err := strconv.Atoi(d.ID); err == nil && n >= s.nextID {
+			s.nextID = n + 1
+		}
 	}
 	return s
 }
@@ -107,12 +113,13 @@ func (s *MemoryStore) Get(id string) (Dish, bool) {
 	return d, ok
 }
 
-// Create stores d under a new ID and returns the stored dish.
+// Create stores d under a new, never-reused ID and returns the stored dish.
 func (s *MemoryStore) Create(d Dish) Dish {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	d.ID = fmt.Sprintf("%d", len(s.dishes)+1)
+	d.ID = strconv.Itoa(s.nextID)
+	s.nextID++
 	s.dishes[d.ID] = d
 	return d
 }
