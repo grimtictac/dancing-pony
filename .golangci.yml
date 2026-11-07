@@ -20,6 +20,8 @@ linters:
       # Deliberate typo used to test typo-tolerant search.
       ignore-rules:
         - mushrom
+        # Standard-library package name (image/color).
+        - color
   exclusions:
     rules:
       # Test helpers create their own contexts on purpose; there is no
