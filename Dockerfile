@@ -15,6 +15,9 @@ WORKDIR /app
 
 COPY --from=builder /out/pony /app/pony
 
+# Inside the container's own network namespace the API must listen on all
+# interfaces; which host ports are exposed is controlled by docker-compose.
+ENV PONY_ADDR=0.0.0.0:8080
 EXPOSE 8080
 
 ENTRYPOINT ["/app/pony", "serve"]

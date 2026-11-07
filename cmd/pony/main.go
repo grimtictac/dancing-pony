@@ -2,12 +2,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/httpapi"
@@ -18,14 +24,22 @@ const usage = `Usage: pony <command> [flags]
 Commands:
   serve   run the HTTP API
   help    show this help
+
+Environment:
+  PONY_ADDR   listen address for serve (default 127.0.0.1:8080)
 `
 
+const (
+	defaultAddr     = "127.0.0.1:8080"
+	shutdownTimeout = 15 * time.Second
+)
+
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
 }
 
 // run dispatches to a subcommand and returns the process exit code.
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return 2
@@ -33,7 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "serve":
-		return serve(args[1:], stderr)
+		return serve(args[1:], getenv, stderr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
@@ -43,19 +57,85 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-func serve(args []string, stderr io.Writer) int {
+type config struct {
+	// Addr is the TCP address to listen on. It defaults to loopback so the
+	// API is only reachable through the reverse proxy.
+	Addr string
+}
+
+func loadConfig(getenv func(string) string) config {
+	cfg := config{Addr: defaultAddr}
+	if v := getenv("PONY_ADDR"); v != "" {
+		cfg.Addr = v
+	}
+	return cfg
+}
+
+func serve(args []string, getenv func(string) string, stderr io.Writer) int {
+	cfg := loadConfig(getenv)
+
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "listen address (overrides PONY_ADDR)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	handler := httpapi.New(dish.NewMemoryStore(dish.Seed()...))
+	logger := slog.New(slog.NewJSONHandler(stderr, nil))
+	slog.SetDefault(logger)
 
-	log.Println("The Orc Shack API listening on :8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
-		log.Print(err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		logger.Error("listen failed", "addr", cfg.Addr, "err", err)
 		return 1
 	}
+	logger.Info("listening", "addr", ln.Addr().String())
+
+	handler := httpapi.New(dish.NewMemoryStore(dish.Seed()...))
+	if err := runServer(ctx, newServer(handler, logger), ln, logger); err != nil {
+		logger.Error("server stopped with error", "err", err)
+		return 1
+	}
+	logger.Info("server stopped")
 	return 0
+}
+
+// newServer returns an HTTP server with timeouts, so slow or idle clients
+// cannot hold connections open indefinitely.
+func newServer(handler http.Handler, logger *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+	}
+}
+
+// runServer serves on ln until ctx is cancelled, then stops accepting new
+// connections and waits (up to shutdownTimeout) for in-flight requests.
+func runServer(ctx context.Context, srv *http.Server, ln net.Listener, logger *slog.Logger) error {
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(ln) }()
+
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
+	}
+
+	logger.Info("shutting down", "timeout", shutdownTimeout.String())
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
