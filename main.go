@@ -10,12 +10,23 @@ import (
 	"sync"
 )
 
+// restaurantCurrency is the only supported currency until restaurants
+// (tenants) exist and carry their own currency.
+const restaurantCurrency = "GBP"
+
+// Money is an amount in the currency's minor unit (e.g. pence) plus its
+// ISO 4217 code. Integers avoid floating-point rounding errors.
+type Money struct {
+	Amount   int64  `json:"amount"`
+	Currency string `json:"currency"`
+}
+
 type Dish struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price"`
-	Image       string  `json:"image"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Price       Money  `json:"price"`
+	Image       string `json:"image"`
 }
 
 var (
@@ -24,14 +35,14 @@ var (
 			ID:          "1",
 			Name:        "Seed Cake",
 			Description: "A warm hobbit-style honey cake with butter and seeds.",
-			Price:       8.5,
+			Price:       Money{Amount: 850, Currency: restaurantCurrency},
 			Image:       "https://example.com/seed-cake.jpg",
 		},
 		"2": {
 			ID:          "2",
 			Name:        "Mushroom Pie",
 			Description: "A savory pie filled with woodland mushrooms and herbs.",
-			Price:       12.0,
+			Price:       Money{Amount: 1200, Currency: restaurantCurrency},
 			Image:       "https://example.com/mushroom-pie.jpg",
 		},
 	}
@@ -191,8 +202,14 @@ func validateDishInput(input Dish) error {
 	if strings.TrimSpace(input.Description) == "" {
 		return errors.New("description is required")
 	}
-	if input.Price <= 0 {
-		return errors.New("price must be greater than zero")
+	if input.Price.Amount <= 0 {
+		return errors.New("price.amount must be a positive whole number of minor units")
+	}
+	if input.Price.Currency == "" {
+		return errors.New("price.currency is required")
+	}
+	if input.Price.Currency != restaurantCurrency {
+		return fmt.Errorf("price.currency must be %s", restaurantCurrency)
 	}
 	if strings.TrimSpace(input.Image) == "" {
 		return errors.New("image is required")
