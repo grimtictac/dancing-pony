@@ -1,23 +1,31 @@
-FROM golang:1.27-alpine AS builder
+# syntax=docker/dockerfile:1
 
+# Base images are pinned by digest; the tag is for readers.
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
+
+# Fail rather than download a different Go than go.mod asks for.
+ENV GOTOOLCHAIN=local CGO_ENABLED=0
 WORKDIR /src
 
-COPY go.mod ./
-RUN go mod download
+COPY go.mod go.sum* ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/pony ./cmd/pony
+ARG TARGETOS TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags='-s -w' -o /out/pony ./cmd/pony
 
-FROM alpine:3.20
+# No shell or package manager; runs as uid 65532.
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
 
-RUN apk add --no-cache ca-certificates
-WORKDIR /app
-
-COPY --from=builder /out/pony /app/pony
+COPY --from=build /out/pony /pony
 
 # Inside the container's own network namespace the API must listen on all
 # interfaces; which host ports are exposed is controlled by docker-compose.
 ENV PONY_ADDR=0.0.0.0:8080
 EXPOSE 8080
+USER nonroot:nonroot
 
-ENTRYPOINT ["/app/pony", "serve"]
+ENTRYPOINT ["/pony", "serve"]

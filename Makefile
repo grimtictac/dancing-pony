@@ -11,11 +11,15 @@ API_TEST_ADDR     := 127.0.0.1:18080
 BRUNO := docker run --rm --network host -v "$(CURDIR)/bruno:/collection" -w /collection \
 	node:22-alpine npx --yes @usebruno/cli@$(BRUNO_CLI_VERSION)
 
+# An isolated copy of the compose stack: own project, volumes and ports.
+COMPOSE_TEST := PONY_PORT=18082 POSTGRES_PORT=15432 PROMETHEUS_PORT=19090 \
+	docker compose -p dancing-pony-test --env-file .env.example --profile app
+
 .DEFAULT_GOAL := help
 
 .PHONY: help
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-13s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: build
 build: ## Build bin/pony
@@ -63,6 +67,24 @@ api-test: build ## Start the API and run the Bruno collection against it (needs 
 		sleep 0.1; \
 	done; \
 	$(BRUNO) run --env local --env-var baseUrl=http://$(API_TEST_ADDR)
+
+.PHONY: up
+up: ## Start Postgres and Prometheus in Docker (needs .env)
+	docker compose up -d --wait
+
+.PHONY: down
+down: ## Stop the compose stack, keeping its data
+	docker compose --profile app down
+
+.PHONY: compose-test
+compose-test: ## Start the whole compose stack in isolation, check it, then remove it
+	@trap '$(COMPOSE_TEST) down -v --remove-orphans' EXIT; \
+	$(COMPOSE_TEST) up -d --build --wait || exit 1; \
+	for i in $$(seq 50); do \
+		curl -sf http://127.0.0.1:18082/health && curl -sf http://127.0.0.1:19090/-/ready && exit 0; \
+		sleep 0.2; \
+	done; \
+	echo "compose stack did not become ready"; $(COMPOSE_TEST) logs; exit 1
 
 .PHONY: clean
 clean: ## Remove build output

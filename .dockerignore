@@ -1,6 +1,7 @@
-.git
-.gitignore
-Dockerfile
-README.md
-prometheus.yml
-.dockerignore
+# Allowlist: only what the build needs enters the build context, so local
+# files such as .env and private notes can never end up in an image layer.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
