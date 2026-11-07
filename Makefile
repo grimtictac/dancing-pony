@@ -20,6 +20,18 @@ COMPOSE_TEST := PONY_PORT=$(API_TEST_PORT) POSTGRES_PORT=15432 PROMETHEUS_PORT=1
 	GRAFANA_PORT=13000 PONY_INTERNAL_PORT=19091 \
 	docker compose -p dancing-pony-test --env-file .env.example --profile app
 
+# Load tests: another isolated stack, with the app container limited like
+# the droplet (1 vCPU, 512 MB) and bulk data. k6 runs in a container.
+LOAD_PORT := 18083
+COMPOSE_LOAD := PONY_PORT=$(LOAD_PORT) POSTGRES_PORT=15433 PONY_INTERNAL_PORT=19093 \
+	docker compose -p dancing-pony-load --env-file .env.example --profile app \
+	-f docker-compose.yml -f loadtest/compose.yml
+LOAD_PSQL = $(COMPOSE_LOAD) exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" $(1)'
+K6 := docker run --rm -i --network host -v "$(CURDIR)/loadtest:/scripts" -w /scripts \
+	grafana/k6:2.3.0@sha256:3e4186aea62e11a45560bfc51e19eeafe82fc07ce069c78aff44b7ff893d9a5e
+RATE ?= 100
+DURATION ?= 30s
+
 .DEFAULT_GOAL := help
 
 .PHONY: help
@@ -107,3 +119,18 @@ down: ## Stop the compose stack, keeping its data
 .PHONY: clean
 clean: ## Remove build output
 	rm -rf bin coverage.out
+
+.PHONY: load-up load-test load-stats load-down
+load-up: ## Start the load-test stack (app limited to 1 vCPU / 512 MB) with bulk data
+	$(COMPOSE_LOAD) up -d --build --wait app
+	$(call LOAD_PSQL) < loadtest/fixture.sql
+
+load-test: ## Run the k6 browsing load test against it (RATE=100 DURATION=30s)
+	$(call LOAD_PSQL,-c "SELECT pg_stat_statements_reset()") >/dev/null
+	$(K6) run -e BASE_URL=http://127.0.0.1:$(LOAD_PORT) -e RATE=$(RATE) -e DURATION=$(DURATION) browse.js
+
+load-stats: ## Show where Postgres spent its time during the last load test
+	$(call LOAD_PSQL) < loadtest/stats.sql
+
+load-down: ## Remove the load-test stack and its data
+	$(COMPOSE_LOAD) down -v --remove-orphans
