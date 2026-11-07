@@ -1,0 +1,61 @@
+#!/bin/bash
+# pony-deploy: install a new pony binary, migrate, restart, and roll back if
+# it doesn't become ready. Installed as /usr/local/bin/pony-deploy; CI runs
+# it as root via a sudo rule that allows exactly this command (deploy/README.md).
+#
+#   pony-deploy /home/deploy/pony.new <git-sha>
+set -euo pipefail
+
+new=$1
+sha=${2:-unknown}
+releases=/opt/pony/releases
+current=/opt/pony/current
+ready=http://127.0.0.1:8080/readyz
+
+log() { echo "pony-deploy: $*"; }
+
+[[ -f $new ]] || { log "no binary at $new"; exit 1; }
+release=$releases/$(date -u +%Y%m%dT%H%M%SZ)-${sha:0:12}
+install -D -o root -g pony -m 0750 "$new" "$release"
+rm -f "$new"
+"$release" help >/dev/null 2>&1 || { log "new binary doesn't run"; exit 1; }
+
+previous=$(readlink -f "$current" 2>/dev/null || true)
+
+# Migrations are forward-only and written to be compatible with the
+# previous release (expand, then contract later), so a rollback below
+# only has to swap the binary back.
+log "migrating"
+set -a; source /etc/pony/pony.env; set +a
+sudo -u pony --preserve-env=PONY_MIGRATE_DATABASE_URL "$release" migrate
+
+switch_to() {
+    ln -sfn "$1" "$current.tmp" && mv -T "$current.tmp" "$current"
+    systemctl restart pony
+}
+
+wait_ready() {
+    for _ in $(seq 30); do
+        curl -fs -o /dev/null "$ready" && return 0
+        sleep 1
+    done
+    return 1
+}
+
+log "starting $(basename "$release")"
+switch_to "$release"
+if wait_ready; then
+    log "ready"
+    # Keep the five newest releases for rollback.
+    ls -1dt "$releases"/* | tail -n +6 | xargs -r rm -f
+    exit 0
+fi
+
+log "not ready after 30s; last log lines:"
+journalctl -u pony -n 20 --no-pager || true
+if [[ -n $previous && -f $previous ]]; then
+    log "rolling back to $(basename "$previous")"
+    switch_to "$previous"
+    wait_ready && log "rolled back" || log "previous release isn't ready either"
+fi
+exit 1

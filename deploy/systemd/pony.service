@@ -1,0 +1,50 @@
+# The API as a systemd service. Installed as /etc/systemd/system/pony.service
+# (see deploy/README.md); deploys replace /opt/pony/current, then restart it.
+[Unit]
+Description=The Dancing Pony API
+Documentation=https://github.com/grimtictac/dancing-pony
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pony
+Group=pony
+# Database URLs and other settings; root-only, never in the repo.
+EnvironmentFile=/etc/pony/pony.env
+# Uploaded photos: /var/lib/pony/photos, owned by pony.
+StateDirectory=pony
+Environment=PONY_PHOTO_DIR=/var/lib/pony/photos
+ExecStart=/opt/pony/current serve
+Restart=on-failure
+RestartSec=2s
+# Graceful shutdown: in-flight requests get this long to finish.
+TimeoutStopSec=20s
+
+# Sandboxing: the API needs the network, its state directory, and nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0027
+# A runaway process can't take the droplet down with it.
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target
