@@ -30,7 +30,7 @@ var ErrInvalidListOptions = errors.New("invalid list options")
 // ListOptions narrows, orders and pages a restaurant's dish list. The zero
 // value lists the first page, oldest dish first.
 type ListOptions struct {
-	Search   string // full-text match on name and description, or a close match on the name
+	Search   string // full-text match on name and description; if none, a close match on the name
 	MinPrice int64  // minor units; 0 means no minimum
 	MaxPrice int64  // minor units; 0 means no maximum
 	Sort     string // "" (oldest first), "name", "-name", "price" or "-price"
@@ -142,9 +142,21 @@ func buildDishList(restaurantID uuid.UUID, opts ListOptions) (string, []any, sor
 	b.WriteString(dishSelect + "\nWHERE d.restaurant_id = $1")
 	if opts.Search != "" {
 		p := arg(opts.Search)
-		// Go note: %[1]s reuses the first argument, so p appears twice.
+		// Full-text first; only if that finds nothing anywhere on the menu,
+		// a close match on the name, so a typo ("mushrom") still finds the
+		// dish. Under Row-Level Security neither can use its GIN index (@@
+		// and <% aren't LEAKPROOF), so both scan the tenant's dishes; the
+		// trigram one costs ~10x more, hence only as a fallback. Each
+		// "(SELECT websearch_to_tsquery(...))" is computed once per query,
+		// not per row (docs/performance.md).
+		//
+		// Go note: %[1]s reuses the first argument, so p appears three times.
 		// %% is a literal %, giving pg_trgm's "<%" (word similarity) operator.
-		fmt.Fprintf(&b, "\n  AND (d.search @@ websearch_to_tsquery('english', %[1]s)\n       OR %[1]s <%% name)", p)
+		fmt.Fprintf(&b, `
+  AND CASE WHEN EXISTS (SELECT 1 FROM dishes x WHERE x.restaurant_id = $1
+                        AND x.search @@ (SELECT websearch_to_tsquery('english', %[1]s)))
+      THEN d.search @@ (SELECT websearch_to_tsquery('english', %[1]s))
+      ELSE %[1]s <%% d.name END`, p)
 	}
 	if opts.MinPrice > 0 {
 		b.WriteString("\n  AND price_amount >= " + arg(opts.MinPrice))
