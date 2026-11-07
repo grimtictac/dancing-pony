@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"the-dancing-pony-v2/internal/httpapi"
+	"the-dancing-pony-v2/internal/photo"
 	"the-dancing-pony-v2/internal/store"
 )
 
@@ -42,10 +43,12 @@ Environment:
   PONY_INTERNAL_ADDR          listen address for /metrics (default 127.0.0.1:9091);
                               never expose it publicly
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
+  PONY_PHOTO_DIR              directory for uploaded dish photos (default data/photos)
 `
 
 const (
 	defaultAddr         = "127.0.0.1:8080"
+	defaultPhotoDir     = "data/photos"
 	defaultInternalAddr = "127.0.0.1:9091"
 	shutdownTimeout     = 15 * time.Second
 )
@@ -93,6 +96,8 @@ type config struct {
 	InternalAddr string
 	// TrustedProxies is PONY_TRUSTED_PROXIES: comma-separated CIDRs.
 	TrustedProxies string
+	// PhotoDir is where uploaded dish photos are stored.
+	PhotoDir string
 }
 
 func loadConfig(getenv func(string) string) config {
@@ -102,6 +107,10 @@ func loadConfig(getenv func(string) string) config {
 		LogLevel:       getenv("PONY_LOG_LEVEL"),
 		InternalAddr:   defaultInternalAddr,
 		TrustedProxies: getenv("PONY_TRUSTED_PROXIES"),
+		PhotoDir:       defaultPhotoDir,
+	}
+	if v := getenv("PONY_PHOTO_DIR"); v != "" {
+		cfg.PhotoDir = v
 	}
 	if v := getenv("PONY_ADDR"); v != "" {
 		cfg.Addr = v
@@ -162,6 +171,14 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	}
 	defer db.Close()
 
+	photos, err := photo.NewDiskStore(cfg.PhotoDir)
+	if err != nil {
+		_ = ln.Close()
+		logger.Error("cannot use photo directory", "dir", cfg.PhotoDir, "err", err)
+		return 1
+	}
+	defer func() { _ = photos.Close() }()
+
 	internalLn, err := lc.Listen(ctx, "tcp", cfg.InternalAddr)
 	if err != nil {
 		_ = ln.Close()
@@ -172,7 +189,7 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	api := httpapi.New(db, logger, httpapi.NewMetrics(reg), trusted)
+	api := httpapi.New(db, photos, logger, httpapi.NewMetrics(reg), trusted)
 	internalMux := http.NewServeMux()
 	internalMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 

@@ -31,6 +31,23 @@ type Dish struct {
 	Price       Money  `json:"price"`
 	Image       string `json:"image"`
 	Rating      Rating `json:"rating"` // read-only: derived from reviews
+	Photo       *Photo `json:"photo"`  // read-only: set by uploading; null when none
+}
+
+// Photo is a dish's uploaded photo. Image is a URL the client supplies;
+// a photo is uploaded, processed and served by the API itself.
+//
+// Width, Height and the placeholders let a client lay out and preview
+// the photo before it loads; how (or whether) to show them is up to the
+// client.
+type Photo struct {
+	URL    string `json:"url"` // relative to the API's base URL
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	// ThumbHash is a ~25-byte blurred preview, base64 (evanw.github.io/thumbhash).
+	ThumbHash string `json:"thumbhash"`
+	// Placeholder is a tiny PNG data URL any client can show as-is.
+	Placeholder string `json:"placeholder"`
 }
 
 // Rating summarises a dish's reviews. Average is null when there are none.

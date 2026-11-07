@@ -1,0 +1,27 @@
+meta {
+  name: Upload a photo
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/photo
+  body: file
+  auth: inherit
+}
+
+body:file {
+  file: @file(photos/fixtures/seed-cake.png) @contentType(image/png)
+}
+
+assert {
+  res.status: eq 200
+  res.body.width: eq 480
+  res.body.height: eq 320
+  res.body.url: startsWith "/photos/"
+  res.body.placeholder: startsWith "data:image/png;base64,"
+}
+
+script:post-response {
+  bru.setVar("photoUrl", res.body.url);
+}

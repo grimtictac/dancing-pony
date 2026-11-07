@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"the-dancing-pony-v2/internal/dish"
+	"the-dancing-pony-v2/internal/photo"
 	"the-dancing-pony-v2/internal/store"
 	"the-dancing-pony-v2/internal/store/storetest"
 )
@@ -49,7 +50,12 @@ func newAPI(t *testing.T) *testAPI {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	a := &testAPI{raw: New(s, slog.New(slog.DiscardHandler), nil, nil), tokens: map[string]string{}}
+	photos, err := photo.NewDiskStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = photos.Close() })
+	a := &testAPI{raw: New(s, photos, slog.New(slog.DiscardHandler), nil, nil), tokens: map[string]string{}}
 	for _, u := range store.DemoUsers {
 		a.tokens[u.Name] = login(t, a.raw, u.Email, store.DemoPassword)
 	}

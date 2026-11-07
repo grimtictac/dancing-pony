@@ -44,6 +44,8 @@ func TestTenantIsolation(t *testing.T) {
 		{"GET /restaurants/{slug}/dishes/{id}", http.MethodGet, "", "", "frodo"},
 		{"PUT /restaurants/{slug}/dishes/{id}", http.MethodPut, "", validDishJSON, "dragon-owner"},
 		{"DELETE /restaurants/{slug}/dishes/{id}", http.MethodDelete, "", "", "dragon-owner"},
+		{"PUT /restaurants/{slug}/dishes/{id}/photo", http.MethodPut, "/photo", string(testJPEG), "dragon-owner"},
+		{"DELETE /restaurants/{slug}/dishes/{id}/photo", http.MethodDelete, "/photo", "", "dragon-owner"},
 		{"GET /restaurants/{slug}/dishes/{id}/reviews", http.MethodGet, "/reviews", "", "frodo"},
 		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodPut, "/reviews/me", validReviewJSON, "frodo"},
 		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", http.MethodDelete, "/reviews/me", "", "frodo"},

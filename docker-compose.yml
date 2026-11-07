@@ -61,6 +61,7 @@ services:
       PONY_INTERNAL_ADDR: 0.0.0.0:9091
       # See .env.example. Without it, all clients look like Docker's gateway.
       PONY_TRUSTED_PROXIES: ${PONY_TRUSTED_PROXIES:-}
+      PONY_PHOTO_DIR: /var/lib/pony/photos
       # Keep the Go heap inside the memory limit below.
       GOMEMLIMIT: 450MiB
     ports:
@@ -75,6 +76,9 @@ services:
         limits:
           cpus: "1"
           memory: 512M
+    # The container is read-only; photos go to a volume.
+    volumes:
+      - photos:/var/lib/pony/photos
 
   postgres:
     image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
@@ -143,3 +147,4 @@ volumes:
   pgdata:
   prometheus_data:
   grafana_data:
+  photos:

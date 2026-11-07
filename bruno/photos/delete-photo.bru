@@ -1,0 +1,15 @@
+meta {
+  name: Delete the photo
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/photo
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 204
+}

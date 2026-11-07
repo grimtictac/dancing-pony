@@ -15,6 +15,7 @@ type Metrics struct {
 	duration       *prometheus.HistogramVec
 	reviewsWritten *prometheus.CounterVec
 	logins         *prometheus.CounterVec
+	photos         *prometheus.CounterVec
 }
 
 // NewMetrics creates the API's metrics and registers them with reg.
@@ -38,7 +39,14 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		Name: "pony_auth_logins_total",
 		Help: "Login attempts, by result: success, failure or throttled.",
 	}, []string{"result"})
-	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins)
+	m.photos = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "pony_photo_uploads_total",
+		Help: "Photo uploads, by result: stored, or rejected (wrong type, too big, corrupt).",
+	}, []string{"result"})
+	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins, m.photos)
+	for _, result := range []string{"stored", "rejected"} {
+		m.photos.WithLabelValues(result)
+	}
 	for _, result := range []string{"success", "failure", "throttled"} {
 		m.logins.WithLabelValues(result)
 	}
@@ -88,4 +96,11 @@ func (m *Metrics) login(result string) {
 		return
 	}
 	m.logins.WithLabelValues(result).Inc()
+}
+
+func (m *Metrics) photoUpload(result string) {
+	if m == nil {
+		return
+	}
+	m.photos.WithLabelValues(result).Inc()
 }

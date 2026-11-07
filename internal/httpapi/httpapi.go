@@ -16,6 +16,7 @@ import (
 	"the-dancing-pony-v2/internal/authz"
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/id"
+	"the-dancing-pony-v2/internal/photo"
 	"the-dancing-pony-v2/internal/review"
 	"the-dancing-pony-v2/internal/sentiment"
 	"the-dancing-pony-v2/internal/store"
@@ -37,7 +38,9 @@ type Store interface {
 	GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error)
 	CreateDish(ctx context.Context, restaurantID uuid.UUID, d dish.Dish) (dish.Dish, error)
 	UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, d dish.Dish) (dish.Dish, error)
-	DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) error
+	DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) (photoKey string, err error)
+	SetDishPhoto(ctx context.Context, restaurantID, dishID uuid.UUID, key string, p photo.Processed) (oldKey string, err error)
+	DeleteDishPhoto(ctx context.Context, restaurantID, dishID uuid.UUID) (key string, err error)
 	PutReview(ctx context.Context, restaurantID, dishID, userID uuid.UUID, in review.Input, s *sentiment.Sentiment) (review.Review, bool, error)
 	DeleteReview(ctx context.Context, restaurantID, dishID, userID uuid.UUID) error
 	ListReviews(ctx context.Context, restaurantID, dishID uuid.UUID, limit int) ([]review.Review, error)
@@ -48,6 +51,7 @@ type api struct {
 	scorer  sentiment.Scorer
 	metrics *Metrics
 	logger  *slog.Logger
+	photos  photo.Store
 	trusted []netip.Prefix // proxies whose forwarding headers are believed
 
 	// Brute-force defence (#5): failures are counted per email+IP, per
@@ -65,9 +69,9 @@ type api struct {
 //
 // m may be nil, to record no metrics. trusted lists the reverse proxies
 // whose X-Real-IP / X-Forwarded-For headers are believed (see clientIP).
-func New(s Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix) http.Handler {
+func New(s Store, photos photo.Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix) http.Handler {
 	a := &api{
-		store: s, scorer: sentiment.WordList{}, metrics: m, logger: logger, trusted: trusted,
+		store: s, scorer: sentiment.WordList{}, metrics: m, logger: logger, photos: photos, trusted: trusted,
 		loginByPair:  auth.NewThrottle(5, time.Second, 15*time.Minute, 15*time.Minute),
 		loginByEmail: auth.NewThrottle(10, time.Second, 30*time.Second, 15*time.Minute),
 		loginByIP:    auth.NewThrottle(20, time.Second, 15*time.Minute, 15*time.Minute),
@@ -79,6 +83,9 @@ func New(s Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix) http.
 	mux.HandleFunc("GET /health", a.livez) // kept for existing clients; same as /livez
 	mux.HandleFunc("GET /livez", a.livez)
 	mux.HandleFunc("GET /readyz", a.readyz)
+	// Public, like a CDN: <img> tags can't send a bearer token. Photo keys
+	// carry 122 random bits, so they can't be guessed or enumerated.
+	mux.HandleFunc("GET "+photo.URLPrefix+"{restaurant}/{file}", a.servePhoto)
 	// Everything below needs a logged-in user, except register and login.
 	mux.HandleFunc("POST /auth/register", a.register)
 	mux.HandleFunc("POST /auth/login", a.login)
@@ -106,6 +113,8 @@ func (a *api) tenantRoutes() []tenantRoute {
 		{"GET /restaurants/{slug}/dishes/{id}", authz.ViewMenu, a.getDish},
 		{"PUT /restaurants/{slug}/dishes/{id}", authz.ManageDishes, a.updateDish},
 		{"DELETE /restaurants/{slug}/dishes/{id}", authz.ManageDishes, a.deleteDish},
+		{"PUT /restaurants/{slug}/dishes/{id}/photo", authz.ManageDishes, a.putPhoto},
+		{"DELETE /restaurants/{slug}/dishes/{id}/photo", authz.ManageDishes, a.deletePhoto},
 		{"GET /restaurants/{slug}/dishes/{id}/reviews", authz.ViewMenu, a.listReviews},
 		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", authz.WriteReview, a.putReview},
 		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", authz.WriteReview, a.deleteReview},
@@ -228,9 +237,11 @@ func (a *api) deleteDish(w http.ResponseWriter, r *http.Request, rest tenant.Res
 	if !ok {
 		return
 	}
-	if !dishFound(w, r, a.store.DeleteDish(r.Context(), rest.ID, dishID)) {
+	photoKey, err := a.store.DeleteDish(r.Context(), rest.ID, dishID)
+	if !dishFound(w, r, err) {
 		return
 	}
+	a.removePhoto(r, photoKey)
 	w.WriteHeader(http.StatusNoContent)
 }
 

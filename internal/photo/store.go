@@ -22,6 +22,12 @@ type Store interface {
 
 var keyPattern = regexp.MustCompile(`^[0-9A-Za-z]{22}/[0-9A-Za-z]{22}\.jpg$`)
 
+// URLPrefix is the API path photos are served under: URLPrefix + key.
+const URLPrefix = "/photos/"
+
+// URL returns the path a photo is served at.
+func URL(key string) string { return URLPrefix + key }
+
 // ValidKey reports whether key is a well-formed photo key.
 func ValidKey(key string) bool { return keyPattern.MatchString(key) }
 

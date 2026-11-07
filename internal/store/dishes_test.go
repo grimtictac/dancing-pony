@@ -51,13 +51,13 @@ func TestDishCRUD(t *testing.T) {
 		t.Errorf("ListDishes = %+v, %v; want [%+v]", list, err, updated)
 	}
 
-	if err := s.DeleteDish(ctx, shack, u); err != nil {
+	if _, err := s.DeleteDish(ctx, shack, u); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetDish(ctx, shack, u); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("GetDish after delete: err = %v, want ErrNotFound", err)
 	}
-	if err := s.DeleteDish(ctx, shack, u); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.DeleteDish(ctx, shack, u); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("second DeleteDish: err = %v, want ErrNotFound", err)
 	}
 }
@@ -95,7 +95,7 @@ func TestDishesAreScopedToTheirRestaurant(t *testing.T) {
 	if _, err := s.UpdateDish(ctx, dragon, dishID, lembas(1)); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("green-dragon UpdateDish: err = %v, want ErrNotFound", err)
 	}
-	if err := s.DeleteDish(ctx, dragon, dishID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.DeleteDish(ctx, dragon, dishID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("green-dragon DeleteDish: err = %v, want ErrNotFound", err)
 	}
 	if got, err := s.GetDish(ctx, shack, dishID); err != nil || got != d {

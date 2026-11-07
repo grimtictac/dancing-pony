@@ -1,0 +1,15 @@
+meta {
+  name: Photo is gone
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}{{photoUrl}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+}

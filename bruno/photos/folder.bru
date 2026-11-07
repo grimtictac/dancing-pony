@@ -1,0 +1,13 @@
+meta {
+  name: Photos
+  seq: 7
+}
+
+docs {
+  Upload a photo for {{restaurant}}'s first dish (firstDishId, set by List
+  dishes), as its owner. The body is the image itself; the API sniffs the
+  type, re-encodes it as JPEG (dropping EXIF/GPS) and returns its URL, size
+  and two placeholders: a ThumbHash and a tiny PNG data URL.
+
+  Photos are served without login, at unguessable URLs, so <img> tags work.
+}

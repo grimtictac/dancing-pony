@@ -1,0 +1,19 @@
+meta {
+  name: Not an image
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}/photo
+  body: text
+  auth: inherit
+}
+
+body:text {
+  <svg onload="alert('the Evil Orc was here')"></svg>
+}
+
+assert {
+  res.status: eq 415
+}

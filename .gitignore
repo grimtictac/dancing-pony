@@ -11,4 +11,7 @@
 # Private working notes
 PLAN_LOCAL.md
 /bin/
+
+# Uploaded photos (PONY_PHOTO_DIR's default)
+/data/
 /coverage.out

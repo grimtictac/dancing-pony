@@ -23,6 +23,17 @@ type Dish struct {
 	UpdatedAt     time.Time
 }
 
+type DishPhoto struct {
+	RestaurantID uuid.UUID
+	DishID       uuid.UUID
+	Key          string
+	Width        int32
+	Height       int32
+	Thumbhash    string
+	DataUrl      string
+	CreatedAt    time.Time
+}
+
 type Membership struct {
 	RestaurantID uuid.UUID
 	UserID       uuid.UUID

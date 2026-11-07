@@ -65,19 +65,26 @@ func (s *Store) UpdateDish(ctx context.Context, restaurantID, dishID uuid.UUID, 
 }
 
 // DeleteDish removes one of a restaurant's dishes, or returns ErrNotFound.
-func (s *Store) DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) error {
+//
+// It returns the key of the dish's photo ("" if none), for the caller to
+// delete from photo storage once this has committed.
+func (s *Store) DeleteDish(ctx context.Context, restaurantID, dishID uuid.UUID) (photoKey string, err error) {
 	var n int64
-	err := s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
+	err = s.inTenant(ctx, restaurantID, pgx.ReadWrite, func(q *sqlcgen.Queries) (err error) {
+		photoKey, err = q.DeleteDishPhoto(ctx, sqlcgen.DeleteDishPhotoParams{RestaurantID: restaurantID, DishID: dishID})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
 		n, err = q.DeleteDish(ctx, sqlcgen.DeleteDishParams{RestaurantID: restaurantID, ID: dishID})
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("delete dish: %w", err)
+		return "", fmt.Errorf("delete dish: %w", err)
 	}
 	if n == 0 {
-		return ErrNotFound
+		return "", ErrNotFound
 	}
-	return nil
+	return photoKey, nil
 }
 
 func result(r sqlcgen.Dish, err error, op string) (dish.Dish, error) {

@@ -9,19 +9,22 @@ import (
 
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/id"
+	"the-dancing-pony-v2/internal/photo"
 )
 
 // dishSelect reads dishes with their rating summary. The LATERAL subquery
 // runs once per dish row; Round 6 measures whether caching the aggregate
 // on the dish is worth it.
 const dishSelect = `SELECT d.restaurant_id, d.id, d.name, d.description, d.price_amount, d.price_currency,
-       d.image_url, d.created_at, d.updated_at, r.rating_count, r.rating_avg
+       d.image_url, d.created_at, d.updated_at, r.rating_count, r.rating_avg,
+       p.key, p.width, p.height, p.thumbhash, p.data_url
 FROM dishes d
 CROSS JOIN LATERAL (
     SELECT count(*) AS rating_count, round(avg(rv.rating), 2)::float8 AS rating_avg
     FROM reviews rv
     WHERE rv.restaurant_id = d.restaurant_id AND rv.dish_id = d.id
-) r`
+) r
+LEFT JOIN dish_photos p ON p.restaurant_id = d.restaurant_id AND p.dish_id = d.id`
 
 // dishRow is one row of dishSelect, in column order.
 type dishRow struct {
@@ -36,6 +39,12 @@ type dishRow struct {
 	UpdatedAt     time.Time
 	RatingCount   int64
 	RatingAvg     *float64 // NULL when there are no reviews
+	// The photo columns are all NULL when the dish has no photo.
+	PhotoKey       *string
+	PhotoWidth     *int32
+	PhotoHeight    *int32
+	PhotoThumbHash *string
+	PhotoDataURL   *string
 }
 
 func getDishRow(ctx context.Context, tx pgx.Tx, restaurantID, dishID uuid.UUID) (dishRow, error) {
@@ -50,7 +59,7 @@ func getDishRow(ctx context.Context, tx pgx.Tx, restaurantID, dishID uuid.UUID) 
 // Go note: a method is declared with a receiver before its name, (r dishRow);
 // it is then called as r.toDish().
 func (r dishRow) toDish() dish.Dish {
-	return dish.Dish{
+	d := dish.Dish{
 		ID:          id.Encode(r.ID),
 		Name:        r.Name,
 		Description: r.Description,
@@ -58,4 +67,14 @@ func (r dishRow) toDish() dish.Dish {
 		Image:       r.ImageUrl,
 		Rating:      dish.Rating{Average: r.RatingAvg, Count: r.RatingCount},
 	}
+	if r.PhotoKey != nil {
+		d.Photo = &dish.Photo{
+			URL:         photo.URL(*r.PhotoKey),
+			Width:       int(*r.PhotoWidth),
+			Height:      int(*r.PhotoHeight),
+			ThumbHash:   *r.PhotoThumbHash,
+			Placeholder: *r.PhotoDataURL,
+		}
+	}
+	return d
 }
