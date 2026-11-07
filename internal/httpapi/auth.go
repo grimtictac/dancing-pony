@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/mail"
@@ -95,10 +96,10 @@ func (a *api) register(w http.ResponseWriter, r *http.Request) {
 	// would probe which emails exist (409), and how sock puppets are made.
 	ip := clientIP(r, a.trusted).String()
 	if wait := a.registerByIP.Wait(ip); wait > 0 {
-		tooManyRequests(w, wait)
+		tooManyRequests(w, r, wait)
 		return
 	}
-	a.registerByIP.Fail(ip)
+	a.throttleFail(r, a.registerByIP, "register_ip", ip, slog.String("ip", ip))
 
 	in, ok := decodeJSON[credentials](w, r)
 	if !ok {
@@ -144,7 +145,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	pair := email + "|" + ip
 	if wait := max(a.loginByPair.Wait(pair), a.loginByEmail.Wait(email), a.loginByIP.Wait(ip)); wait > 0 {
 		a.metrics.login("throttled")
-		tooManyRequests(w, wait)
+		tooManyRequests(w, r, wait)
 		return
 	}
 
@@ -168,9 +169,10 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if !known || !match {
 		// Unknown emails count too, like OpenSSH's invaliduser penalty.
-		a.loginByPair.Fail(pair)
-		a.loginByEmail.Fail(email)
-		a.loginByIP.Fail(ip)
+		ipAttr, emailAttr := slog.String("ip", ip), slog.String("email", email)
+		a.throttleFail(r, a.loginByPair, "login_email_ip", pair, ipAttr, emailAttr)
+		a.throttleFail(r, a.loginByEmail, "login_email", email, emailAttr)
+		a.throttleFail(r, a.loginByIP, "login_ip", ip, ipAttr)
 		a.metrics.login("failure")
 		writeProblem(w, http.StatusUnauthorized, errBadCredentials)
 		return
@@ -211,8 +213,28 @@ func (a *api) me(w http.ResponseWriter, r *http.Request) {
 // tooManyRequests replies 429 at once with Retry-After, rather than
 // sleeping: a sleeping handler would hold a goroutine and a connection
 // per attacker request, turning the defence into a denial of service.
-func tooManyRequests(w http.ResponseWriter, wait time.Duration) {
+func tooManyRequests(w http.ResponseWriter, r *http.Request, wait time.Duration) {
+	info(r.Context()).RetryAfter = wait
 	secs := int(math.Ceil(wait.Seconds()))
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
 	writeProblem(w, http.StatusTooManyRequests, "too many attempts; try again in "+strconv.Itoa(secs)+" seconds")
+}
+
+// throttleFail records a failure against key and, when that failure starts
+// a block, logs it at WARN: who, which limit, and for how long. Requests
+// refused while blocked aren't counted, so this logs at most once per block
+// per key, however hard the Evil Orc hammers; each refusal still shows in
+// the access log as a 429 with retry_after_s.
+func (a *api) throttleFail(r *http.Request, t *auth.Throttle, scope, key string, attrs ...slog.Attr) {
+	failures, blocked := t.Fail(key)
+	if blocked == 0 {
+		return
+	}
+	attrs = append([]slog.Attr{
+		slog.String("request_id", info(r.Context()).ID),
+		slog.String("scope", scope),
+		slog.Int("failures", failures),
+		slog.Float64("blocked_s", blocked.Seconds()),
+	}, attrs...)
+	a.logger.LogAttrs(r.Context(), slog.LevelWarn, "throttle engaged", attrs...)
 }

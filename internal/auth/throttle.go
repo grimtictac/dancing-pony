@@ -56,8 +56,9 @@ func (t *Throttle) Wait(key string) time.Duration {
 	return max(0, e.blockedUntil.Sub(now))
 }
 
-// Fail records a failed attempt for key.
-func (t *Throttle) Fail(key string) {
+// Fail records a failed attempt for key. It returns the failure count
+// and, if this failure starts a block, how long the block lasts (else 0).
+func (t *Throttle) Fail(key string) (failures int, blocked time.Duration) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := t.now()
@@ -77,7 +78,9 @@ func (t *Throttle) Fail(key string) {
 			delay = t.Base << (over - 1) // 1x, 2x, 4x, ... the base delay
 		}
 		e.blockedUntil = now.Add(delay)
+		return e.failures, delay
 	}
+	return e.failures, 0
 }
 
 // Reset forgets key, e.g. after a successful login.

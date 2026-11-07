@@ -25,6 +25,7 @@ type reqInfo struct {
 	Restaurant string
 	User       string
 	Err        error
+	RetryAfter time.Duration // set when the request was throttled (429)
 }
 
 type reqInfoKey struct{}
@@ -74,6 +75,9 @@ func accessLog(logger *slog.Logger, m *Metrics, next http.Handler) http.Handler 
 		}
 		if ri.Err != nil {
 			attrs = append(attrs, slog.String("err", ri.Err.Error()))
+		}
+		if ri.RetryAfter > 0 {
+			attrs = append(attrs, slog.Float64("retry_after_s", ri.RetryAfter.Seconds()))
 		}
 		logger.LogAttrs(r.Context(), logLevel(r.Method, sw.status), "request", attrs...)
 	})

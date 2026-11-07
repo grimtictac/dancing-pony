@@ -47,6 +47,7 @@ type api struct {
 	store   Store
 	scorer  sentiment.Scorer
 	metrics *Metrics
+	logger  *slog.Logger
 	trusted []netip.Prefix // proxies whose forwarding headers are believed
 
 	// Brute-force defence (#5): failures are counted per email+IP, per
@@ -66,7 +67,7 @@ type api struct {
 // whose X-Real-IP / X-Forwarded-For headers are believed (see clientIP).
 func New(s Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix) http.Handler {
 	a := &api{
-		store: s, scorer: sentiment.WordList{}, metrics: m, trusted: trusted,
+		store: s, scorer: sentiment.WordList{}, metrics: m, logger: logger, trusted: trusted,
 		loginByPair:  auth.NewThrottle(5, time.Second, 15*time.Minute, 15*time.Minute),
 		loginByEmail: auth.NewThrottle(10, time.Second, 30*time.Second, 15*time.Minute),
 		loginByIP:    auth.NewThrottle(20, time.Second, 15*time.Minute, 15*time.Minute),

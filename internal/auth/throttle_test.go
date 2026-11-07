@@ -10,14 +10,18 @@ func TestThrottle(t *testing.T) {
 	th := NewThrottle(3, time.Second, 10*time.Second, time.Hour)
 	th.now = func() time.Time { return clock }
 
-	for range 3 {
-		th.Fail("k")
+	for i := range 3 {
+		if n, blocked := th.Fail("k"); n != i+1 || blocked != 0 {
+			t.Fatalf("free failure %d: Fail = (%d, %v), want (%d, 0)", i+1, n, blocked, i+1)
+		}
 	}
 	if w := th.Wait("k"); w != 0 {
 		t.Fatalf("after 3 free failures: wait %v, want 0", w)
 	}
 	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 10 * time.Second, 10 * time.Second} {
-		th.Fail("k")
+		if n, blocked := th.Fail("k"); n != 4+i || blocked != want {
+			t.Errorf("failure %d over the limit: Fail = (%d, %v), want (%d, %v)", i+1, n, blocked, 4+i, want)
+		}
 		if w := th.Wait("k"); w != want {
 			t.Errorf("failure %d over the limit: wait %v, want %v", i+1, w, want)
 		}
