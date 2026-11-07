@@ -1,0 +1,24 @@
+meta {
+  name: Invalid JSON
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/dishes
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:text {
+  {"name": "Half a pie"
+}
+
+assert {
+  res.status: eq 400
+  res.body.detail: eq "invalid JSON"
+}

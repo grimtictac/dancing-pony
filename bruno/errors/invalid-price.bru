@@ -1,0 +1,27 @@
+meta {
+  name: Invalid price
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/dishes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Free lunch",
+    "description": "There is no such thing.",
+    "price": { "amount": 0, "currency": "ZAR" },
+    "image": "https://example.com/free-lunch.jpg"
+  }
+}
+
+assert {
+  res.status: eq 400
+  res.body.status: eq 400
+  res.body.title: eq "Bad Request"
+  res.body.detail: contains "price.amount"
+}

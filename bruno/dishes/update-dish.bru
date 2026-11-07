@@ -1,0 +1,26 @@
+meta {
+  name: Update dish
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/dishes/{{dishId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Lembas",
+    "description": "Elvish waybread, now wrapped in mallorn leaves.",
+    "price": { "amount": 4999, "currency": "ZAR" },
+    "image": "https://example.com/lembas.jpg"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq "{{dishId}}"
+  res.body.price.amount: eq 4999
+}

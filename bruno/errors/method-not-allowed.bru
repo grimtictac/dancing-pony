@@ -1,0 +1,26 @@
+meta {
+  name: Method not allowed
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/dishes
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 405
+  res.body.title: eq "Method Not Allowed"
+}
+
+tests {
+  test("lists the allowed methods", function () {
+    expect(res.getHeader("allow")).to.equal("GET, HEAD, POST");
+  });
+
+  test("is a problem+json response", function () {
+    expect(res.getHeader("content-type")).to.contain("application/problem+json");
+  });
+}

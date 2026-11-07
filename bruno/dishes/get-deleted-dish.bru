@@ -1,0 +1,22 @@
+meta {
+  name: Get deleted dish
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/dishes/{{dishId}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+  res.body.detail: eq "dish not found"
+}
+
+tests {
+  test("is a problem+json response", function () {
+    expect(res.getHeader("content-type")).to.contain("application/problem+json");
+  });
+}

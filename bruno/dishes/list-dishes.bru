@@ -1,0 +1,26 @@
+meta {
+  name: List dishes
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/dishes
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+tests {
+  test("every price is whole ZAR cents", function () {
+    for (const d of res.getBody()) {
+      expect(Number.isInteger(d.price.amount)).to.equal(true);
+      expect(d.price.amount).to.be.above(0);
+      expect(d.price.currency).to.equal("ZAR");
+    }
+  });
+}

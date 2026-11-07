@@ -1,0 +1,31 @@
+meta {
+  name: Create dish
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/dishes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Lembas",
+    "description": "Elvish waybread. One bite fills a grown man's stomach.",
+    "price": { "amount": 4550, "currency": "ZAR" },
+    "image": "https://example.com/lembas.jpg"
+  }
+}
+
+vars:post-response {
+  dishId: res.body.id
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isString
+  res.body.name: eq "Lembas"
+  res.body.price.amount: eq 4550
+}
