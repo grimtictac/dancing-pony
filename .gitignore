@@ -10,3 +10,5 @@
 
 # Private working notes
 PLAN_LOCAL.md
+/bin/
+/coverage.out
