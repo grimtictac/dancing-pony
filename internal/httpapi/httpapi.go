@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"the-dancing-pony-v2/internal/dish"
 )
@@ -14,66 +13,37 @@ type api struct {
 	dishes *dish.MemoryStore
 }
 
-// New returns the HTTP handler for the API.
+// New returns the HTTP handler for the API. Routes use the standard library's
+// method and wildcard patterns, so unsupported methods get a 405 with an
+// Allow header and unknown paths get a 404.
 func New(dishes *dish.MemoryStore) http.Handler {
 	a := &api{dishes: dishes}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", a.health)
-	mux.HandleFunc("/dishes", a.dishCollection)
-	mux.HandleFunc("/dishes/", a.dishItem)
-	mux.HandleFunc("/", a.root)
+	mux.HandleFunc("GET /{$}", a.root)
+	mux.HandleFunc("GET /health", a.health)
+	mux.HandleFunc("GET /dishes", a.listDishes)
+	mux.HandleFunc("POST /dishes", a.createDish)
+	mux.HandleFunc("GET /dishes/{id}", a.getDish)
+	mux.HandleFunc("PUT /dishes/{id}", a.updateDish)
+	mux.HandleFunc("DELETE /dishes/{id}", a.deleteDish)
 	return mux
 }
 
 func (a *api) root(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]string{"service": "The Orc Shack API", "status": "running"})
 }
 
 func (a *api) health(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (a *api) dishCollection(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, http.StatusOK, a.dishes.List())
-	case http.MethodPost:
-		a.createDish(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
+func (a *api) listDishes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, a.dishes.List())
 }
 
-func (a *api) dishItem(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/dishes/")
-	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
-		return
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		a.getDish(w, r, id)
-	case http.MethodPut:
-		a.updateDish(w, r, id)
-	case http.MethodDelete:
-		a.deleteDish(w, r, id)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (a *api) getDish(w http.ResponseWriter, r *http.Request, id string) {
-	d, ok := a.dishes.Get(id)
+func (a *api) getDish(w http.ResponseWriter, r *http.Request) {
+	d, ok := a.dishes.Get(r.PathValue("id"))
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -89,12 +59,12 @@ func (a *api) createDish(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, a.dishes.Create(input))
 }
 
-func (a *api) updateDish(w http.ResponseWriter, r *http.Request, id string) {
+func (a *api) updateDish(w http.ResponseWriter, r *http.Request) {
 	input, ok := decodeDish(w, r)
 	if !ok {
 		return
 	}
-	updated, found := a.dishes.Update(id, input)
+	updated, found := a.dishes.Update(r.PathValue("id"), input)
 	if !found {
 		http.NotFound(w, r)
 		return
@@ -102,8 +72,8 @@ func (a *api) updateDish(w http.ResponseWriter, r *http.Request, id string) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
-func (a *api) deleteDish(w http.ResponseWriter, r *http.Request, id string) {
-	if !a.dishes.Delete(id) {
+func (a *api) deleteDish(w http.ResponseWriter, r *http.Request) {
+	if !a.dishes.Delete(r.PathValue("id")) {
 		http.NotFound(w, r)
 		return
 	}

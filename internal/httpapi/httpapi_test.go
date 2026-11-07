@@ -125,3 +125,36 @@ func TestUnknownDishIsNotFound(t *testing.T) {
 		})
 	}
 }
+
+func TestRoutes(t *testing.T) {
+	tests := []struct {
+		method, path string
+		wantStatus   int
+		wantAllow    string // checked only for 405 responses
+	}{
+		{http.MethodGet, "/", http.StatusOK, ""},
+		{http.MethodGet, "/health", http.StatusOK, ""},
+		{http.MethodGet, "/dishes", http.StatusOK, ""},
+		{http.MethodGet, "/dishes/1", http.StatusOK, ""},
+		{http.MethodGet, "/nope", http.StatusNotFound, ""},
+		{http.MethodGet, "/dishes/1/extra", http.StatusNotFound, ""},
+		{http.MethodPost, "/", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodPost, "/health", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodDelete, "/dishes", http.StatusMethodNotAllowed, "GET, HEAD, POST"},
+		{http.MethodPost, "/dishes/1", http.StatusMethodNotAllowed, "DELETE, GET, HEAD, PUT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			rec := do(t, newSeededAPI(), tt.method, tt.path, "")
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if tt.wantStatus == http.StatusMethodNotAllowed {
+				if got := rec.Header().Get("Allow"); got != tt.wantAllow {
+					t.Errorf("Allow = %q, want %q", got, tt.wantAllow)
+				}
+			}
+		})
+	}
+}
