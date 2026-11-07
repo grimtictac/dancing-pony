@@ -1,5 +1,6 @@
 # Compiled binaries
 /the-dancing-pony-v2
+/pony
 *.exe
 *.test
 *.out
