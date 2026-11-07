@@ -1,0 +1,18 @@
+# sqlc generates type-safe Go from the SQL in internal/store/queries, checked
+# against the schema built from the goose migrations. Run `make generate`.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: internal/store/migrations
+    queries: internal/store/queries
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/store/sqlcgen
+        sql_package: pgx/v5
+        emit_empty_slices: true
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time

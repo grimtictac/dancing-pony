@@ -58,6 +58,18 @@ fmt: ## Format code
 vuln: ## Check dependencies and the standard library for known vulnerabilities
 	$(GOVULNCHECK) ./...
 
+# sqlc needs cgo for its Postgres parser, so it runs from its image.
+SQLC := docker run --rm -u $$(id -u):$$(id -g) -v "$(CURDIR):/src" -w /src \
+	sqlc/sqlc:1.31.1@sha256:70f53171d27b2424e9358869975455a6e955a5aa8e58a998a270a6e34e525537
+
+.PHONY: generate
+generate: ## Regenerate Go code from the SQL queries (sqlc)
+	$(SQLC) generate
+
+.PHONY: generate-check
+generate-check: ## Fail if the generated code is out of date
+	$(SQLC) diff
+
 .PHONY: check
 check: vet lint test vuln ## Run everything CI runs except api-test
 

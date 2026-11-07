@@ -44,6 +44,7 @@ jobs:
           version: v2.15.0
           # Build with the module's Go version so the linter understands it.
           install-mode: goinstall
+      - run: make generate-check
 
   vuln:
     runs-on: ubuntu-latest
