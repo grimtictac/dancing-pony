@@ -1,3 +1,7 @@
+# Local settings (database URLs etc.) for make run / make migrate.
+-include .env
+export
+
 # Keep these in step with .github/workflows/ci.yml.
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
@@ -19,7 +23,7 @@ COMPOSE_TEST := PONY_PORT=18082 POSTGRES_PORT=15432 PROMETHEUS_PORT=19090 \
 
 .PHONY: help
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-13s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: build
 build: ## Build bin/pony
@@ -70,7 +74,15 @@ api-test: build ## Start the API and run the Bruno collection against it (needs 
 
 .PHONY: up
 up: ## Start Postgres and Prometheus in Docker (needs .env)
-	docker compose up -d --wait
+	docker compose up -d --wait postgres prometheus
+
+.PHONY: migrate
+migrate: ## Apply database migrations (needs make up)
+	go run ./cmd/pony migrate up
+
+.PHONY: migrate-status
+migrate-status: ## Show which migrations are applied
+	go run ./cmd/pony migrate status
 
 .PHONY: down
 down: ## Stop the compose stack, keeping its data

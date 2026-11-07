@@ -13,6 +13,21 @@ x-hardened: &hardened
     - no-new-privileges:true
 
 services:
+  # One-shot: applies migrations as the schema owner, then exits.
+  migrate:
+    profiles: [app]
+    build: .
+    image: dancing-pony:dev
+    <<: *hardened
+    read_only: true
+    cap_drop: [ALL]
+    command: ["migrate", "up"]
+    environment:
+      PONY_MIGRATE_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   app:
     profiles: [app]
     build: .
@@ -20,6 +35,9 @@ services:
     <<: *hardened
     read_only: true
     cap_drop: [ALL]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     environment:
       # Keep the Go heap inside the memory limit below.
       GOMEMLIMIT: 450MiB

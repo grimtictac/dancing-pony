@@ -22,11 +22,13 @@ import (
 const usage = `Usage: pony <command> [flags]
 
 Commands:
-  serve   run the HTTP API
-  help    show this help
+  serve     run the HTTP API
+  migrate   apply or inspect database migrations (pony migrate help)
+  help      show this help
 
 Environment:
-  PONY_ADDR   listen address for serve (default 127.0.0.1:8080)
+  PONY_ADDR                   listen address for serve (default 127.0.0.1:8080)
+  PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate, as the schema owner
 `
 
 const (
@@ -48,6 +50,8 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	switch args[0] {
 	case "serve":
 		return serve(args[1:], getenv, stderr)
+	case "migrate":
+		return migrate(args[1:], getenv, stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0

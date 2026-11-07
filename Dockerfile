@@ -28,4 +28,5 @@ ENV PONY_ADDR=0.0.0.0:8080
 EXPOSE 8080
 USER nonroot:nonroot
 
-ENTRYPOINT ["/pony", "serve"]
+ENTRYPOINT ["/pony"]
+CMD ["serve"]
