@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +28,7 @@ func newAPI(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	return New(s)
+	return New(s, slog.New(slog.DiscardHandler))
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {

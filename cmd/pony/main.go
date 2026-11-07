@@ -30,6 +30,7 @@ Commands:
 Environment:
   PONY_ADDR                   listen address for serve (default 127.0.0.1:8080)
   PONY_DATABASE_URL           Postgres URL for serve, as the pony_app role
+  PONY_LOG_LEVEL              debug, info (default), warn or error
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
 `
 
@@ -71,12 +72,16 @@ type config struct {
 	Addr string
 	// DatabaseURL connects as pony_app, which Row-Level Security restricts.
 	DatabaseURL string
+	// LogLevel is the minimum level logged. At info, reads (GETs) are not
+	// logged; debug logs every request.
+	LogLevel string
 }
 
 func loadConfig(getenv func(string) string) config {
 	cfg := config{
 		Addr:        defaultAddr,
 		DatabaseURL: getenv("PONY_DATABASE_URL"),
+		LogLevel:    getenv("PONY_LOG_LEVEL"),
 	}
 	if v := getenv("PONY_ADDR"); v != "" {
 		cfg.Addr = v
@@ -94,7 +99,14 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 		return 2
 	}
 
-	logger := slog.New(slog.NewJSONHandler(stderr, nil))
+	var level slog.Level // zero value: info
+	if cfg.LogLevel != "" {
+		if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+			_, _ = fmt.Fprintf(stderr, "pony serve: PONY_LOG_LEVEL: %v\n", err)
+			return 2
+		}
+	}
+	logger := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
 	if cfg.DatabaseURL == "" {
@@ -121,7 +133,7 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	}
 	defer db.Close()
 
-	if err := runServer(ctx, newServer(httpapi.New(db), logger), ln, logger); err != nil {
+	if err := runServer(ctx, newServer(httpapi.New(db, logger), logger), ln, logger); err != nil {
 		logger.Error("server stopped with error", "err", err)
 		return 1
 	}

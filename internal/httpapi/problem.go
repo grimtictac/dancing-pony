@@ -30,6 +30,7 @@ type router struct {
 
 func (rt router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h, pattern := rt.mux.Handler(r)
+	info(r.Context()).Route = pattern
 	if pattern != "" {
 		rt.mux.ServeHTTP(w, r)
 		return

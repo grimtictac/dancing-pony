@@ -41,7 +41,7 @@ type api struct {
 // method and wildcard patterns, so unsupported methods get a 405 with an
 // Allow header and unknown paths get a 404. All errors are RFC 9457
 // application/problem+json.
-func New(s Store) http.Handler {
+func New(s Store, logger *slog.Logger) http.Handler {
 	a := &api{store: s, scorer: sentiment.WordList{}}
 
 	mux := http.NewServeMux()
@@ -50,7 +50,7 @@ func New(s Store) http.Handler {
 	for _, rt := range a.tenantRoutes() {
 		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.handler))
 	}
-	return router{mux: mux}
+	return accessLog(logger, router{mux: mux})
 }
 
 // tenantRoute is a route within one restaurant.
@@ -82,7 +82,9 @@ type restaurantHandler func(http.ResponseWriter, *http.Request, tenant.Restauran
 // slug is a 404.
 func (a *api) inRestaurant(h restaurantHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rest, err := a.store.RestaurantBySlug(r.Context(), r.PathValue("slug"))
+		slug := r.PathValue("slug")
+		info(r.Context()).Restaurant = slug
+		rest, err := a.store.RestaurantBySlug(r.Context(), slug)
 		if errors.Is(err, store.ErrNotFound) {
 			writeProblem(w, http.StatusNotFound, errRestaurantNotFound)
 			return
@@ -184,9 +186,10 @@ func dishFound(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
-// internalError logs err and sends a 500 without its details.
+// internalError sends a 500 without the error's details; the access log
+// records err on the request's log line, with its request ID.
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+	info(r.Context()).Err = err
 	writeProblem(w, http.StatusInternalServerError, "")
 }
 
