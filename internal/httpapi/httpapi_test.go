@@ -41,6 +41,9 @@ func newAPI(t *testing.T) *testAPI {
 	if _, err := store.Seed(ctx, db.OwnerURL, store.DemoRestaurants); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SeedMemberships(ctx, db.OwnerURL, store.DemoUsers); err != nil {
+		t.Fatal(err)
+	}
 	s, err := store.Open(ctx, db.AppURL)
 	if err != nil {
 		t.Fatal(err)

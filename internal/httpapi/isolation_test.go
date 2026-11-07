@@ -64,7 +64,7 @@ func TestTenantIsolation(t *testing.T) {
 
 	covered["POST /restaurants/{slug}/dishes"] = true
 	t.Run("POST /restaurants/{slug}/dishes", func(t *testing.T) {
-		rec := do(t, h, http.MethodPost, dragon, validDishJSON)
+		rec := doAs(t, h, "dragon-owner", http.MethodPost, dragon, validDishJSON)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
 		}

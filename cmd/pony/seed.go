@@ -53,5 +53,9 @@ func seed(args []string, getenv func(string) string, stdout, stderr io.Writer) i
 		_, _ = fmt.Fprintf(stderr, "pony seed: %v\n", err)
 		return 1
 	}
+	if err := store.SeedMemberships(ctx, dsn, store.DemoUsers); err != nil {
+		_, _ = fmt.Fprintf(stderr, "pony seed: %v\n", err)
+		return 1
+	}
 	return 0
 }

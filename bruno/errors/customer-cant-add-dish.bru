@@ -1,0 +1,68 @@
+meta {
+  name: Customer can't add a dish
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{frodoToken}}
+}
+
+body:json {
+  {
+    "name": "Po-tay-toes",
+    "description": "Boiled, mashed, stuck in a stew.",
+    "price": { "amount": 3000, "currency": "ZAR" },
+    "image": "https://example.com/potatoes.jpg"
+  }
+}
+
+docs {
+  Roles are per restaurant: owners and staff manage dishes; everyone else
+  is a customer there (browse and review). Owners and staff can't review
+  their own restaurant.
+}
+
+assert {
+  res.status: eq 403
+}
+meta {
+  name: Customer can't add a dish
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{frodoToken}}
+}
+
+body:json {
+  {
+    "name": "Frodo's Stew",
+    "description": "He doesn't work here.",
+    "price": { "amount": 100, "currency": "ZAR" },
+    "image": "https://example.com/stew.jpg"
+  }
+}
+
+docs {
+  Roles are per restaurant: owners and staff manage dishes; customers
+  (anyone else who is logged in) view and review. Owners and staff can't
+  review their own restaurant.
+}
+
+assert {
+  res.status: eq 403
+}

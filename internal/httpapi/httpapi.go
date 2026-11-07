@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"the-dancing-pony-v2/internal/auth"
+	"the-dancing-pony-v2/internal/authz"
 	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/id"
 	"the-dancing-pony-v2/internal/review"
@@ -29,6 +30,7 @@ type Store interface {
 	CreateSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expires time.Time) error
 	UserBySession(ctx context.Context, tokenHash []byte) (auth.User, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
+	Role(ctx context.Context, restaurantID, userID uuid.UUID) (authz.Role, error)
 	RestaurantBySlug(ctx context.Context, slug string) (tenant.Restaurant, error)
 	ListDishes(ctx context.Context, restaurantID uuid.UUID, opts store.ListOptions) ([]dish.Dish, string, error)
 	GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error)
@@ -66,7 +68,7 @@ func New(s Store, logger *slog.Logger, m *Metrics) http.Handler {
 	mux.HandleFunc("POST /auth/logout", a.authed(a.logout))
 	mux.HandleFunc("GET /auth/me", a.authed(a.me))
 	for _, rt := range a.tenantRoutes() {
-		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.handler))
+		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.action, rt.handler))
 	}
 	return accessLog(logger, m, router{mux: mux})
 }
@@ -74,6 +76,7 @@ func New(s Store, logger *slog.Logger, m *Metrics) http.Handler {
 // tenantRoute is a route within one restaurant.
 type tenantRoute struct {
 	pattern string
+	action  authz.Action // what the caller must be allowed to do
 	handler restaurantHandler
 }
 
@@ -81,14 +84,14 @@ type tenantRoute struct {
 // tenant-isolation tests fail for any route here they don't cover.
 func (a *api) tenantRoutes() []tenantRoute {
 	return []tenantRoute{
-		{"GET /restaurants/{slug}/dishes", a.listDishes},
-		{"POST /restaurants/{slug}/dishes", a.createDish},
-		{"GET /restaurants/{slug}/dishes/{id}", a.getDish},
-		{"PUT /restaurants/{slug}/dishes/{id}", a.updateDish},
-		{"DELETE /restaurants/{slug}/dishes/{id}", a.deleteDish},
-		{"GET /restaurants/{slug}/dishes/{id}/reviews", a.listReviews},
-		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", a.putReview},
-		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", a.deleteReview},
+		{"GET /restaurants/{slug}/dishes", authz.ViewMenu, a.listDishes},
+		{"POST /restaurants/{slug}/dishes", authz.ManageDishes, a.createDish},
+		{"GET /restaurants/{slug}/dishes/{id}", authz.ViewMenu, a.getDish},
+		{"PUT /restaurants/{slug}/dishes/{id}", authz.ManageDishes, a.updateDish},
+		{"DELETE /restaurants/{slug}/dishes/{id}", authz.ManageDishes, a.deleteDish},
+		{"GET /restaurants/{slug}/dishes/{id}/reviews", authz.ViewMenu, a.listReviews},
+		{"PUT /restaurants/{slug}/dishes/{id}/reviews/me", authz.WriteReview, a.putReview},
+		{"DELETE /restaurants/{slug}/dishes/{id}/reviews/me", authz.WriteReview, a.deleteReview},
 	}
 }
 
@@ -97,20 +100,21 @@ type restaurantHandler func(http.ResponseWriter, *http.Request, tenant.Restauran
 
 // inRestaurant authenticates the caller, then resolves the {slug} in the
 // path to the restaurant that every query in h is scoped to, and records
-// both in the request context. Authentication comes first, so anonymous
+// both in the request context, and finally checks the caller's role there
+// allows action (authz.Can). Authentication comes first, so anonymous
 // callers can't even probe which restaurants exist. An unknown slug is a
-// 404.
-func (a *api) inRestaurant(h restaurantHandler) http.HandlerFunc {
+// 404; a forbidden action a 403.
+func (a *api) inRestaurant(action authz.Action, h restaurantHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, ok := a.authenticate(w, r)
 		if !ok {
 			return
 		}
-		r = r.WithContext(withUser(r.Context(), u))
+		ctx := withUser(r.Context(), u)
 
 		slug := r.PathValue("slug")
-		info(r.Context()).Restaurant = slug
-		rest, err := a.store.RestaurantBySlug(r.Context(), slug)
+		info(ctx).Restaurant = slug
+		rest, err := a.store.RestaurantBySlug(ctx, slug)
 		if errors.Is(err, store.ErrNotFound) {
 			writeProblem(w, http.StatusNotFound, errRestaurantNotFound)
 			return
@@ -119,7 +123,18 @@ func (a *api) inRestaurant(h restaurantHandler) http.HandlerFunc {
 			internalError(w, r, err)
 			return
 		}
-		h(w, r.WithContext(tenant.WithRestaurant(r.Context(), rest)), rest)
+		role := authz.Customer
+		if action != authz.ViewMenu { // everyone may view; skip the lookup
+			if role, err = a.store.Role(ctx, rest.ID, u.ID); err != nil {
+				internalError(w, r, err)
+				return
+			}
+		}
+		if !authz.Can(role, u.PlatformAdmin, action) {
+			writeProblem(w, http.StatusForbidden, "your role here ("+string(role)+") may not "+string(action))
+			return
+		}
+		h(w, r.WithContext(tenant.WithRestaurant(ctx, rest)), rest)
 	}
 }
 

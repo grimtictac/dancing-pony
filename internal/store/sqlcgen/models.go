@@ -23,6 +23,13 @@ type Dish struct {
 	UpdatedAt     time.Time
 }
 
+type Membership struct {
+	RestaurantID uuid.UUID
+	UserID       uuid.UUID
+	Role         string
+	CreatedAt    time.Time
+}
+
 type Restaurant struct {
 	ID        uuid.UUID
 	Slug      string

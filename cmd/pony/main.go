@@ -28,7 +28,8 @@ const usage = `Usage: pony <command> [flags]
 Commands:
   serve     run the HTTP API
   migrate   apply or inspect database migrations (pony migrate help)
-  seed      add the demo restaurants and dishes (pony seed help)
+  seed      add the demo users, restaurants and dishes (pony seed help)
+  admin     create platform admins, grant restaurant roles (pony admin help)
   help      show this help
 
 Environment:
@@ -62,6 +63,8 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		return serve(args[1:], getenv, stderr)
 	case "migrate":
 		return migrate(args[1:], getenv, stdout, stderr)
+	case "admin":
+		return admin(args[1:], getenv, stdout, stderr)
 	case "seed":
 		return seed(args[1:], getenv, stdout, stderr)
 	case "help", "-h", "--help":
