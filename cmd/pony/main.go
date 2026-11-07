@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -40,7 +41,7 @@ Environment:
   PONY_TRUSTED_PROXIES        CIDRs of reverse proxies whose X-Real-IP and
                               X-Forwarded-For are believed, e.g. 127.0.0.1/32
                               behind Nginx (default: none)
-  PONY_INTERNAL_ADDR          listen address for /metrics (default 127.0.0.1:9091);
+  PONY_INTERNAL_ADDR          listen address for /metrics and /debug/pprof (default 127.0.0.1:9091);
                               never expose it publicly
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
   PONY_PHOTO_DIR              directory for uploaded dish photos (default data/photos)
@@ -192,12 +193,22 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	api := httpapi.New(db, photos, logger, httpapi.NewMetrics(reg), trusted)
 	internalMux := http.NewServeMux()
 	internalMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	// Profiling (go tool pprof http://127.0.0.1:9091/debug/pprof/profile).
+	// Only here, never on the public listener: profiles reveal internals and
+	// a CPU profile costs real CPU.
+	internalMux.HandleFunc("GET /debug/pprof/", pprof.Index)
+	internalMux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+	internalMux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+	internalMux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+	internalMux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 
 	// Go note: "go f()" runs f concurrently in a goroutine. The buffered
 	// channel carries its result back; receiving from it (<-internalDone)
 	// waits until the goroutine has sent.
 	internalDone := make(chan error, 1)
-	go func() { internalDone <- runServer(ctx, newServer(internalMux, logger), internalLn, logger) }()
+	internalSrv := newServer(internalMux, logger)
+	internalSrv.WriteTimeout = 2 * time.Minute // a CPU profile streams for ?seconds= (default 30)
+	go func() { internalDone <- runServer(ctx, internalSrv, internalLn, logger) }()
 
 	err = runServer(ctx, newServer(api, logger), ln, logger)
 	stop() // if the API server failed, stop the internal one too
