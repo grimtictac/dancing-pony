@@ -1,4 +1,4 @@
-# Local settings (database URLs etc.) for make run / make migrate.
+# Local settings (database URLs etc.) for make run / migrate / seed.
 -include .env
 export
 
@@ -11,12 +11,12 @@ GOVULNCHECK   := go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 
 # The Bruno CLI needs Node 22+, so it runs in a throwaway container.
 BRUNO_CLI_VERSION := 4.3.0
-API_TEST_ADDR     := 127.0.0.1:18080
 BRUNO := docker run --rm --network host -v "$(CURDIR)/bruno:/collection" -w /collection \
 	node:22-alpine npx --yes @usebruno/cli@$(BRUNO_CLI_VERSION)
 
 # An isolated copy of the compose stack: own project, volumes and ports.
-COMPOSE_TEST := PONY_PORT=18082 POSTGRES_PORT=15432 PROMETHEUS_PORT=19090 \
+API_TEST_PORT := 18082
+COMPOSE_TEST := PONY_PORT=$(API_TEST_PORT) POSTGRES_PORT=15432 PROMETHEUS_PORT=19090 \
 	docker compose -p dancing-pony-test --env-file .env.example --profile app
 
 .DEFAULT_GOAL := help
@@ -30,7 +30,7 @@ build: ## Build bin/pony
 	go build -trimpath -o bin/pony ./cmd/pony
 
 .PHONY: run
-run: ## Run the API locally
+run: ## Run the API locally (needs make db)
 	go run ./cmd/pony serve
 
 .PHONY: test
@@ -71,22 +71,21 @@ generate-check: ## Fail if the generated code is out of date
 	$(SQLC) diff
 
 .PHONY: check
-check: vet lint test vuln ## Run everything CI runs except api-test
+check: vet lint test vuln ## Run the Go checks CI runs (see also api-test)
 
 .PHONY: api-test
-api-test: build ## Start the API and run the Bruno collection against it (needs Docker)
-	@./bin/pony serve -addr $(API_TEST_ADDR) >/dev/null 2>&1 & pid=$$!; \
-	trap 'kill $$pid 2>/dev/null' EXIT; \
-	for i in $$(seq 50); do \
-		kill -0 $$pid 2>/dev/null || { echo "pony failed to start on $(API_TEST_ADDR)"; exit 1; }; \
-		curl -sf http://$(API_TEST_ADDR)/health >/dev/null && break; \
-		sleep 0.1; \
-	done; \
-	$(BRUNO) run --env local --env-var baseUrl=http://$(API_TEST_ADDR)
+api-test: ## Run the Bruno collection against the full compose stack, in isolation (needs Docker)
+	@trap '$(COMPOSE_TEST) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_TEST) up -d --build --wait || { $(COMPOSE_TEST) logs; exit 1; }; \
+	curl -sf http://127.0.0.1:19090/-/ready >/dev/null || { echo "prometheus not ready"; exit 1; }; \
+	$(BRUNO) run --env local --env-var baseUrl=http://127.0.0.1:$(API_TEST_PORT)
 
 .PHONY: up
 up: ## Start Postgres and Prometheus in Docker (needs .env)
 	docker compose up -d --wait postgres prometheus
+
+.PHONY: db
+db: up migrate seed ## Start Postgres, apply migrations and add the demo restaurants
 
 .PHONY: migrate
 migrate: ## Apply database migrations (needs make up)
@@ -96,19 +95,13 @@ migrate: ## Apply database migrations (needs make up)
 migrate-status: ## Show which migrations are applied
 	go run ./cmd/pony migrate status
 
+.PHONY: seed
+seed: ## Add the demo restaurants and dishes if missing
+	go run ./cmd/pony seed
+
 .PHONY: down
 down: ## Stop the compose stack, keeping its data
 	docker compose --profile app down
-
-.PHONY: compose-test
-compose-test: ## Start the whole compose stack in isolation, check it, then remove it
-	@trap '$(COMPOSE_TEST) down -v --remove-orphans' EXIT; \
-	$(COMPOSE_TEST) up -d --build --wait || exit 1; \
-	for i in $$(seq 50); do \
-		curl -sf http://127.0.0.1:18082/health && curl -sf http://127.0.0.1:19090/-/ready && exit 0; \
-		sleep 0.2; \
-	done; \
-	echo "compose stack did not become ready"; $(COMPOSE_TEST) logs; exit 1
 
 .PHONY: clean
 clean: ## Remove build output

@@ -1,0 +1,16 @@
+meta {
+  name: Unknown restaurant
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/restaurants/prancing-pony/dishes
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+  res.body.detail: eq "restaurant not found"
+}

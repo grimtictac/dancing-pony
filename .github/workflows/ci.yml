@@ -60,24 +60,12 @@ jobs:
 
   api:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      # Runs the Bruno collection against a freshly built binary.
-      - run: make api-test
-
-  compose:
-    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Builds the app image and starts the full stack, so the Dockerfile and
-      # compose file can't rot while production runs the binary directly.
-      - run: make compose-test
+      # Builds the image, starts the whole compose stack (Postgres, migrate,
+      # seed, app, Prometheus) and runs the Bruno collection against it, so
+      # the collection, Dockerfile and compose file can't drift from the API.
+      - run: make api-test

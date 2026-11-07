@@ -1,0 +1,25 @@
+meta {
+  name: Other restaurant can't update dish
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/restaurants/{{otherRestaurant}}/dishes/{{firstDishId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Stolen Cake",
+    "description": "Renamed by the wrong restaurant.",
+    "price": { "amount": 1, "currency": "ZAR" },
+    "image": "https://example.com/stolen.jpg"
+  }
+}
+
+assert {
+  res.status: eq 404
+  res.body.detail: eq "dish not found"
+}

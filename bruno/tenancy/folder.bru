@@ -1,0 +1,11 @@
+meta {
+  name: Tenancy
+  seq: 3
+}
+
+docs {
+  Restaurants can't reach each other's dishes. These requests use a dish of
+  {{restaurant}} (firstDishId, set by List dishes) through
+  {{otherRestaurant}}'s URL. Each gets the same 404 as a dish that doesn't
+  exist, so they reveal nothing about it, and the dish is unchanged.
+}

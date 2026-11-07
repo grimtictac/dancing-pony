@@ -2,7 +2,7 @@
 # this file is for development and review only.
 #
 #   cp .env.example .env
-#   docker compose up -d --wait                 # Postgres + Prometheus
+#   make db                                     # Postgres, migrated and seeded
 #   docker compose --profile app up -d --build  # ...plus the API in a container
 #
 # Every port is published on 127.0.0.1 only. Images are pinned by digest.
@@ -11,6 +11,10 @@ name: dancing-pony
 x-hardened: &hardened
   security_opt:
     - no-new-privileges:true
+
+# Run as the schema owner. The app itself connects as pony_app.
+x-owner-db: &owner-db
+  PONY_MIGRATE_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
 
 services:
   # One-shot: applies migrations as the schema owner, then exits.
@@ -22,11 +26,24 @@ services:
     read_only: true
     cap_drop: [ALL]
     command: ["migrate", "up"]
-    environment:
-      PONY_MIGRATE_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    environment: *owner-db
     depends_on:
       postgres:
         condition: service_healthy
+
+  # One-shot: adds the demo restaurants if they are missing, then exits.
+  seed:
+    profiles: [app]
+    build: .
+    image: dancing-pony:dev
+    <<: *hardened
+    read_only: true
+    cap_drop: [ALL]
+    command: ["seed"]
+    environment: *owner-db
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   app:
     profiles: [app]
@@ -36,9 +53,10 @@ services:
     read_only: true
     cap_drop: [ALL]
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
     environment:
+      PONY_DATABASE_URL: postgres://pony_app:${PONY_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       # Keep the Go heap inside the memory limit below.
       GOMEMLIMIT: 450MiB
     ports:
@@ -58,9 +76,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?set it in .env (see .env.example)}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env (see .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:?set it in .env (see .env.example)}
+      # Used by deploy/postgres/initdb to create the pony_app login role.
+      PONY_APP_DB_PASSWORD: ${PONY_APP_DB_PASSWORD:?set it in .env (see .env.example)}
     volumes:
       # Postgres 18 keeps its data in a versioned directory below this path.
       - pgdata:/var/lib/postgresql
+      # Run once, when the data volume is first created.
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:

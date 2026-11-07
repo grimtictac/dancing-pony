@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/dishes
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes
   body: none
   auth: none
 }
@@ -13,6 +13,11 @@ get {
 assert {
   res.status: eq 200
   res.body: isArray
+  res.body[0].name: eq "Seed Cake"
+}
+
+vars:post-response {
+  firstDishId: res.body[0].id
 }
 
 tests {

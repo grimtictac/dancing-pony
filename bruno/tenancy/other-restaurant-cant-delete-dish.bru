@@ -1,0 +1,16 @@
+meta {
+  name: Other restaurant can't delete dish
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/restaurants/{{otherRestaurant}}/dishes/{{firstDishId}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+  res.body.detail: eq "dish not found"
+}

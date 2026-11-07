@@ -5,14 +5,15 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/dishes/1
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}
   body: none
   auth: none
 }
 
 assert {
   res.status: eq 200
-  res.body.id: eq "1"
+  res.body.id: eq "{{firstDishId}}"
+  res.body.name: eq "Seed Cake"
   res.body.price.amount: eq 8500
   res.body.price.currency: eq "ZAR"
 }

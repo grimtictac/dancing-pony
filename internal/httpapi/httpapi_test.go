@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +9,26 @@ import (
 	"testing"
 
 	"the-dancing-pony-v2/internal/dish"
+	"the-dancing-pony-v2/internal/store"
+	"the-dancing-pony-v2/internal/store/storetest"
 )
+
+// newAPI returns the API on a fresh database seeded with the demo
+// restaurants: orc-shack (Seed Cake, Mushroom Pie) and green-dragon.
+func newAPI(t *testing.T) http.Handler {
+	t.Helper()
+	ctx := context.Background()
+	db := storetest.Migrated(t)
+	if _, err := store.Seed(ctx, db.OwnerURL, store.DemoRestaurants); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(ctx, db.AppURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	return New(s)
+}
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -23,10 +43,6 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 	return rec
 }
 
-func newSeededAPI() http.Handler {
-	return New(dish.NewMemoryStore(dish.Seed()...))
-}
-
 func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 	t.Helper()
 	var v T
@@ -36,8 +52,30 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 	return v
 }
 
+// dishNamed returns the restaurant's dish with the given name.
+func dishNamed(t *testing.T, h http.Handler, slug, name string) dish.Dish {
+	t.Helper()
+	rec := do(t, h, http.MethodGet, "/restaurants/"+slug+"/dishes", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list %s dishes: status %d", slug, rec.Code)
+	}
+	for _, d := range decode[[]dish.Dish](t, rec) {
+		if d.Name == name {
+			return d
+		}
+	}
+	t.Fatalf("%s has no dish named %q", slug, name)
+	return dish.Dish{}
+}
+
+const (
+	shackDishes = "/restaurants/orc-shack/dishes"
+	// A well-formed ID that no dish has.
+	unknownDishID = "0000000000000000000001"
+)
+
 func TestHealth(t *testing.T) {
-	rec := do(t, newSeededAPI(), http.MethodGet, "/health", "")
+	rec := do(t, newAPI(t), http.MethodGet, "/health", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -47,8 +85,22 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestListDishes(t *testing.T) {
+	rec := do(t, newAPI(t), http.MethodGet, shackDishes, "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	got := decode[[]dish.Dish](t, rec)
+	if len(got) != 2 || got[0].Name != "Seed Cake" || got[1].Name != "Mushroom Pie" {
+		t.Errorf("dishes = %+v, want Seed Cake then Mushroom Pie", got)
+	}
+}
+
 func TestSeedDishPriceIsInMinorUnits(t *testing.T) {
-	rec := do(t, newSeededAPI(), http.MethodGet, "/dishes/1", "")
+	h := newAPI(t)
+	cake := dishNamed(t, h, "orc-shack", "Seed Cake")
+	rec := do(t, h, http.MethodGet, shackDishes+"/"+cake.ID, "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -61,14 +113,17 @@ func TestSeedDishPriceIsInMinorUnits(t *testing.T) {
 
 func TestCreateDishAcceptsMinorUnitPrice(t *testing.T) {
 	body := `{"name":"Lembas","description":"Elven waybread.","price":{"amount":12500,"currency":"ZAR"},"image":"https://example.com/lembas.jpg"}`
-	rec := do(t, newSeededAPI(), http.MethodPost, "/dishes", body)
+	rec := do(t, newAPI(t), http.MethodPost, shackDishes, body)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusCreated, rec.Body)
 	}
-	want := dish.Money{Amount: 12500, Currency: "ZAR"}
-	if got := decode[dish.Dish](t, rec).Price; got != want {
-		t.Errorf("price = %+v, want %+v", got, want)
+	got := decode[dish.Dish](t, rec)
+	if want := (dish.Money{Amount: 12500, Currency: "ZAR"}); got.Price != want {
+		t.Errorf("price = %+v, want %+v", got.Price, want)
+	}
+	if len(got.ID) != 22 {
+		t.Errorf("id = %q, want a 22-character base62 ID", got.ID)
 	}
 }
 
@@ -82,12 +137,13 @@ func TestCreateDishRejectsInvalidPrice(t *testing.T) {
 		{"zero amount", `{"amount":0,"currency":"ZAR"}`},
 		{"negative amount", `{"amount":-100,"currency":"ZAR"}`},
 		{"missing currency", `{"amount":8500}`},
-		{"unsupported currency", `{"amount":8500,"currency":"GBP"}`},
+		{"not the restaurant's currency", `{"amount":8500,"currency":"GBP"}`},
 	}
+	h := newAPI(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := `{"name":"Stew","description":"Rabbit stew.","price":` + tt.price + `,"image":"https://example.com/stew.jpg"}`
-			rec := do(t, newSeededAPI(), http.MethodPost, "/dishes", body)
+			rec := do(t, h, http.MethodPost, shackDishes, body)
 
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want %d; body: %s", rec.Code, http.StatusBadRequest, rec.Body)
@@ -97,36 +153,54 @@ func TestCreateDishRejectsInvalidPrice(t *testing.T) {
 }
 
 func TestUpdateThenDeleteDish(t *testing.T) {
-	h := newSeededAPI()
+	h := newAPI(t)
+	cake := dishNamed(t, h, "orc-shack", "Seed Cake")
+	path := shackDishes + "/" + cake.ID
 	body := `{"name":"Seed Cake","description":"Now with extra seeds.","price":{"amount":9000,"currency":"ZAR"},"image":"https://example.com/seed-cake.jpg"}`
 
-	rec := do(t, h, http.MethodPut, "/dishes/1", body)
+	rec := do(t, h, http.MethodPut, path, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("update status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body)
 	}
-	if got := decode[dish.Dish](t, rec); got.ID != "1" || got.Price.Amount != 9000 {
-		t.Errorf("updated dish = %+v, want ID 1 and amount 9000", got)
+	if got := decode[dish.Dish](t, rec); got.ID != cake.ID || got.Price.Amount != 9000 {
+		t.Errorf("updated dish = %+v, want ID %s and amount 9000", got, cake.ID)
 	}
 
-	if rec := do(t, h, http.MethodDelete, "/dishes/1", ""); rec.Code != http.StatusNoContent {
+	if rec := do(t, h, http.MethodDelete, path, ""); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
-	if rec := do(t, h, http.MethodGet, "/dishes/1", ""); rec.Code != http.StatusNotFound {
+	if rec := do(t, h, http.MethodGet, path, ""); rec.Code != http.StatusNotFound {
 		t.Errorf("get after delete status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
 
 func TestUnknownDishIsNotFound(t *testing.T) {
-	for _, method := range []string{http.MethodGet, http.MethodDelete} {
-		t.Run(method, func(t *testing.T) {
-			if rec := do(t, newSeededAPI(), method, "/dishes/999", ""); rec.Code != http.StatusNotFound {
-				t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
-			}
-		})
+	h := newAPI(t)
+	for _, dishID := range []string{unknownDishID, "1", "not-a-valid-id-at-all!"} {
+		for _, method := range []string{http.MethodGet, http.MethodDelete} {
+			t.Run(method+" "+dishID, func(t *testing.T) {
+				if rec := do(t, h, method, shackDishes+"/"+dishID, ""); rec.Code != http.StatusNotFound {
+					t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+				}
+			})
+		}
+	}
+}
+
+func TestUnknownRestaurantIsNotFound(t *testing.T) {
+	rec := do(t, newAPI(t), http.MethodGet, "/restaurants/prancing-pony/dishes", "")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if got := decode[problem](t, rec).Detail; got != "restaurant not found" {
+		t.Errorf("detail = %q, want restaurant not found", got)
 	}
 }
 
 func TestRoutes(t *testing.T) {
+	h := newAPI(t)
+	cake := shackDishes + "/" + dishNamed(t, h, "orc-shack", "Seed Cake").ID
 	tests := []struct {
 		method, path string
 		wantStatus   int
@@ -134,18 +208,20 @@ func TestRoutes(t *testing.T) {
 	}{
 		{http.MethodGet, "/", http.StatusOK, ""},
 		{http.MethodGet, "/health", http.StatusOK, ""},
-		{http.MethodGet, "/dishes", http.StatusOK, ""},
-		{http.MethodGet, "/dishes/1", http.StatusOK, ""},
+		{http.MethodGet, shackDishes, http.StatusOK, ""},
+		{http.MethodGet, cake, http.StatusOK, ""},
 		{http.MethodGet, "/nope", http.StatusNotFound, ""},
-		{http.MethodGet, "/dishes/1/extra", http.StatusNotFound, ""},
+		{http.MethodGet, "/dishes", http.StatusNotFound, ""},
+		{http.MethodGet, "/restaurants/orc-shack", http.StatusNotFound, ""},
+		{http.MethodGet, cake + "/extra", http.StatusNotFound, ""},
 		{http.MethodPost, "/", http.StatusMethodNotAllowed, "GET, HEAD"},
 		{http.MethodPost, "/health", http.StatusMethodNotAllowed, "GET, HEAD"},
-		{http.MethodDelete, "/dishes", http.StatusMethodNotAllowed, "GET, HEAD, POST"},
-		{http.MethodPost, "/dishes/1", http.StatusMethodNotAllowed, "DELETE, GET, HEAD, PUT"},
+		{http.MethodDelete, shackDishes, http.StatusMethodNotAllowed, "GET, HEAD, POST"},
+		{http.MethodPost, cake, http.StatusMethodNotAllowed, "DELETE, GET, HEAD, PUT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			rec := do(t, newSeededAPI(), tt.method, tt.path, "")
+			rec := do(t, h, tt.method, tt.path, "")
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)

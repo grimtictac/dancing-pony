@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"the-dancing-pony-v2/internal/dish"
 	"the-dancing-pony-v2/internal/httpapi"
+	"the-dancing-pony-v2/internal/store"
 )
 
 const usage = `Usage: pony <command> [flags]
@@ -29,6 +29,7 @@ Commands:
 
 Environment:
   PONY_ADDR                   listen address for serve (default 127.0.0.1:8080)
+  PONY_DATABASE_URL           Postgres URL for serve, as the pony_app role
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
 `
 
@@ -68,10 +69,15 @@ type config struct {
 	// Addr is the TCP address to listen on. It defaults to loopback so the
 	// API is only reachable through the reverse proxy.
 	Addr string
+	// DatabaseURL connects as pony_app, which Row-Level Security restricts.
+	DatabaseURL string
 }
 
 func loadConfig(getenv func(string) string) config {
-	cfg := config{Addr: defaultAddr}
+	cfg := config{
+		Addr:        defaultAddr,
+		DatabaseURL: getenv("PONY_DATABASE_URL"),
+	}
 	if v := getenv("PONY_ADDR"); v != "" {
 		cfg.Addr = v
 	}
@@ -91,6 +97,11 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	logger := slog.New(slog.NewJSONHandler(stderr, nil))
 	slog.SetDefault(logger)
 
+	if cfg.DatabaseURL == "" {
+		logger.Error("PONY_DATABASE_URL is not set")
+		return 2
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -102,8 +113,15 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	}
 	logger.Info("listening", "addr", ln.Addr().String())
 
-	handler := httpapi.New(dish.NewMemoryStore(dish.Seed()...))
-	if err := runServer(ctx, newServer(handler, logger), ln, logger); err != nil {
+	db, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		_ = ln.Close()
+		logger.Error("cannot use database", "err", err)
+		return 1
+	}
+	defer db.Close()
+
+	if err := runServer(ctx, newServer(httpapi.New(db), logger), ln, logger); err != nil {
 		logger.Error("server stopped with error", "err", err)
 		return 1
 	}

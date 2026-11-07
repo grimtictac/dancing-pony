@@ -4,6 +4,9 @@ meta {
 }
 
 docs {
-  Run in order: Create dish stores the new ID in `dishId`, which the
-  requests after it use. Prices are integer minor units (cents) in ZAR.
+  Dishes of {{restaurant}} (set in the environment). Run in order: List
+  dishes stores the first dish's ID in `firstDishId`, and Create dish
+  stores the new ID in `dishId`, for the requests after them. IDs are
+  22-character base62 UUIDs. Prices are integer minor units (cents) in the
+  restaurant's currency, ZAR for the demo restaurants.
 }

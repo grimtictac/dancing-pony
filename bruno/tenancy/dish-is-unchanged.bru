@@ -1,0 +1,17 @@
+meta {
+  name: Dish is unchanged
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/restaurants/{{restaurant}}/dishes/{{firstDishId}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: eq "Seed Cake"
+  res.body.price.amount: eq 8500
+}

@@ -10,9 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"the-dancing-pony-v2/internal/dish"
-	"the-dancing-pony-v2/internal/httpapi"
 )
 
 func noEnv(string) string { return "" }
@@ -51,15 +48,51 @@ func TestRun(t *testing.T) {
 
 func TestServeFailsWhenAddressInUse(t *testing.T) {
 	ln := listen(t)
+	// Never used: listening fails first.
+	env := func(k string) string {
+		return map[string]string{"PONY_DATABASE_URL": "postgres://unused"}[k]
+	}
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"serve", "-addr", ln.Addr().String()}, noEnv, &stdout, &stderr)
+	code := run([]string{"serve", "-addr", ln.Addr().String()}, env, &stdout, &stderr)
 
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "listen failed") {
 		t.Errorf("stderr = %q, want it to mention listen failed", stderr.String())
+	}
+}
+
+func TestServeNeedsDatabaseURL(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"serve", "-addr", "127.0.0.1:0"}, noEnv, &stdout, &stderr); code != 2 {
+		t.Errorf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "PONY_DATABASE_URL is not set") {
+		t.Errorf("stderr = %q, want it to say PONY_DATABASE_URL is not set", stderr.String())
+	}
+}
+
+func TestServeFailsWhenDatabaseUnavailable(t *testing.T) {
+	// A port nothing listens on, so the connection is refused at once.
+	closed := listen(t)
+	addr := closed.Addr().String()
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	env := func(k string) string {
+		return map[string]string{
+			"PONY_DATABASE_URL": "postgres://pony_app:x@" + addr + "/pony?connect_timeout=5",
+		}[k]
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"serve", "-addr", "127.0.0.1:0"}, env, &stdout, &stderr); code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "cannot use database") {
+		t.Errorf("stderr = %q, want it to say it cannot use the database", stderr.String())
 	}
 }
 
@@ -92,7 +125,10 @@ func TestNewServerSetsTimeouts(t *testing.T) {
 func TestRunServerServesUntilCancelled(t *testing.T) {
 	ln := listen(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := startServer(ctx, httpapi.New(dish.NewMemoryStore(dish.Seed()...)), ln)
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	done := startServer(ctx, ok, ln)
 
 	status, err := get(t.Context(), "http://"+ln.Addr().String()+"/health")
 	if err != nil {
