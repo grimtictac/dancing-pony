@@ -3,8 +3,10 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,6 +91,15 @@ func normaliseEmail(s string) (string, bool) {
 
 // register handles POST /auth/register.
 func (a *api) register(w http.ResponseWriter, r *http.Request) {
+	// Every attempt counts, successful or not: registration is how one
+	// would probe which emails exist (409), and how sock puppets are made.
+	ip := clientIP(r, a.trusted).String()
+	if wait := a.registerByIP.Wait(ip); wait > 0 {
+		tooManyRequests(w, wait)
+		return
+	}
+	a.registerByIP.Fail(ip)
+
 	in, ok := decodeJSON[credentials](w, r)
 	if !ok {
 		return
@@ -129,6 +140,14 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	email, _ := normaliseEmail(in.Email)
 
+	ip := clientIP(r, a.trusted).String()
+	pair := email + "|" + ip
+	if wait := max(a.loginByPair.Wait(pair), a.loginByEmail.Wait(email), a.loginByIP.Wait(ip)); wait > 0 {
+		a.metrics.login("throttled")
+		tooManyRequests(w, wait)
+		return
+	}
+
 	u, hash, err := a.store.UserByEmail(r.Context(), email)
 	known := err == nil
 	if errors.Is(err, store.ErrNotFound) {
@@ -148,6 +167,11 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !known || !match {
+		// Unknown emails count too, like OpenSSH's invaliduser penalty.
+		a.loginByPair.Fail(pair)
+		a.loginByEmail.Fail(email)
+		a.loginByIP.Fail(ip)
+		a.metrics.login("failure")
 		writeProblem(w, http.StatusUnauthorized, errBadCredentials)
 		return
 	}
@@ -162,6 +186,8 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
+	a.loginByPair.Reset(pair)
+	a.metrics.login("success")
 	info(r.Context()).User = id.Encode(u.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "token_type": "Bearer", "expires_at": expires.UTC()})
 }
@@ -180,4 +206,13 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r.Context())
 	writeJSON(w, http.StatusOK, userResponse{ID: id.Encode(u.ID), Email: u.Email})
+}
+
+// tooManyRequests replies 429 at once with Retry-After, rather than
+// sleeping: a sleeping handler would hold a goroutine and a connection
+// per attacker request, turning the defence into a denial of service.
+func tooManyRequests(w http.ResponseWriter, wait time.Duration) {
+	secs := int(math.Ceil(wait.Seconds()))
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	writeProblem(w, http.StatusTooManyRequests, "too many attempts; try again in "+strconv.Itoa(secs)+" seconds")
 }

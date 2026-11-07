@@ -59,6 +59,8 @@ services:
     environment:
       PONY_DATABASE_URL: postgres://pony_app:${PONY_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       PONY_INTERNAL_ADDR: 0.0.0.0:9091
+      # See .env.example. Without it, all clients look like Docker's gateway.
+      PONY_TRUSTED_PROXIES: ${PONY_TRUSTED_PROXIES:-}
       # Keep the Go heap inside the memory limit below.
       GOMEMLIMIT: 450MiB
     ports:

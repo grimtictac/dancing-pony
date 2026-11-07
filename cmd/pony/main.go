@@ -36,6 +36,9 @@ Environment:
   PONY_ADDR                   listen address for serve (default 127.0.0.1:8080)
   PONY_DATABASE_URL           Postgres URL for serve, as the pony_app role
   PONY_LOG_LEVEL              debug, info (default), warn or error
+  PONY_TRUSTED_PROXIES        CIDRs of reverse proxies whose X-Real-IP and
+                              X-Forwarded-For are believed, e.g. 127.0.0.1/32
+                              behind Nginx (default: none)
   PONY_INTERNAL_ADDR          listen address for /metrics (default 127.0.0.1:9091);
                               never expose it publicly
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
@@ -88,14 +91,17 @@ type config struct {
 	// InternalAddr serves operational endpoints (/metrics) on a separate
 	// listener that the reverse proxy never forwards to.
 	InternalAddr string
+	// TrustedProxies is PONY_TRUSTED_PROXIES: comma-separated CIDRs.
+	TrustedProxies string
 }
 
 func loadConfig(getenv func(string) string) config {
 	cfg := config{
-		Addr:         defaultAddr,
-		DatabaseURL:  getenv("PONY_DATABASE_URL"),
-		LogLevel:     getenv("PONY_LOG_LEVEL"),
-		InternalAddr: defaultInternalAddr,
+		Addr:           defaultAddr,
+		DatabaseURL:    getenv("PONY_DATABASE_URL"),
+		LogLevel:       getenv("PONY_LOG_LEVEL"),
+		InternalAddr:   defaultInternalAddr,
+		TrustedProxies: getenv("PONY_TRUSTED_PROXIES"),
 	}
 	if v := getenv("PONY_ADDR"); v != "" {
 		cfg.Addr = v
@@ -125,6 +131,12 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	}
 	logger := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
+
+	trusted, err := httpapi.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		logger.Error("PONY_TRUSTED_PROXIES is invalid", "err", err)
+		return 2
+	}
 
 	if cfg.DatabaseURL == "" {
 		logger.Error("PONY_DATABASE_URL is not set")
@@ -160,7 +172,7 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	api := httpapi.New(db, logger, httpapi.NewMetrics(reg))
+	api := httpapi.New(db, logger, httpapi.NewMetrics(reg), trusted)
 	internalMux := http.NewServeMux()
 	internalMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 

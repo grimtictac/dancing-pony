@@ -14,6 +14,7 @@ type Metrics struct {
 	requests       *prometheus.CounterVec
 	duration       *prometheus.HistogramVec
 	reviewsWritten *prometheus.CounterVec
+	logins         *prometheus.CounterVec
 }
 
 // NewMetrics creates the API's metrics and registers them with reg.
@@ -33,7 +34,14 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help: "Reviews written, by result (created or updated) and sentiment label.",
 		}, []string{"result", "sentiment"}),
 	}
-	reg.MustRegister(m.requests, m.duration, m.reviewsWritten)
+	m.logins = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "pony_auth_logins_total",
+		Help: "Login attempts, by result: success, failure or throttled.",
+	}, []string{"result"})
+	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins)
+	for _, result := range []string{"success", "failure", "throttled"} {
+		m.logins.WithLabelValues(result)
+	}
 	// Start every review series at 0. Prometheus only counts increases it
 	// sees, so a series that first appears at 1 would hide that first review.
 	for _, result := range []string{"created", "updated"} {
@@ -74,3 +82,10 @@ func (m *Metrics) reviewWritten(created bool, sentiment string) {
 // Go note: methods on a pointer receiver can be called on a nil pointer;
 // observe and reviewWritten check for that, making nil a valid "no
 // metrics" value.
+
+func (m *Metrics) login(result string) {
+	if m == nil {
+		return
+	}
+	m.logins.WithLabelValues(result).Inc()
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,6 +47,14 @@ type api struct {
 	store   Store
 	scorer  sentiment.Scorer
 	metrics *Metrics
+	trusted []netip.Prefix // proxies whose forwarding headers are believed
+
+	// Brute-force defence (#5): failures are counted per email+IP, per
+	// email and per IP, each with its own allowance. The per-email delay
+	// is capped low, so an attacker who knows Frodo's email can slow
+	// guessing against it without locking Frodo out.
+	loginByPair, loginByEmail, loginByIP *auth.Throttle
+	registerByIP                         *auth.Throttle
 }
 
 // New returns the HTTP handler for the API. Routes use the standard library's
@@ -53,9 +62,16 @@ type api struct {
 // Allow header and unknown paths get a 404. All errors are RFC 9457
 // application/problem+json.
 //
-// m may be nil, to record no metrics.
-func New(s Store, logger *slog.Logger, m *Metrics) http.Handler {
-	a := &api{store: s, scorer: sentiment.WordList{}, metrics: m}
+// m may be nil, to record no metrics. trusted lists the reverse proxies
+// whose X-Real-IP / X-Forwarded-For headers are believed (see clientIP).
+func New(s Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix) http.Handler {
+	a := &api{
+		store: s, scorer: sentiment.WordList{}, metrics: m, trusted: trusted,
+		loginByPair:  auth.NewThrottle(5, time.Second, 15*time.Minute, 15*time.Minute),
+		loginByEmail: auth.NewThrottle(10, time.Second, 30*time.Second, 15*time.Minute),
+		loginByIP:    auth.NewThrottle(20, time.Second, 15*time.Minute, 15*time.Minute),
+		registerByIP: auth.NewThrottle(10, 10*time.Second, time.Hour, time.Hour),
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.root)

@@ -30,9 +30,7 @@ groups:
         annotations:
           summary: '95th percentile latency of {{ $labels.route }} is over 500 ms.'
 
-      # A burst of client errors (4xx) often means probing or abuse. Login
-      # failure and throttling metrics (Round 4) will sharpen this into the
-      # "Evil Orc" brute-force alert.
+      # A burst of client errors (4xx) often means probing or abuse.
       - alert: PonyClientErrorSpike
         expr: sum(rate(pony_http_requests_total{status=~"4.."}[2m])) > 5
         for: 2m
@@ -40,3 +38,13 @@ groups:
           severity: warning
         annotations:
           summary: More than 5 client errors per second for 2 minutes.
+
+      # The Evil Orc is guessing passwords: sustained failed or throttled
+      # logins. Throttling already slows the guessing; this tells a human.
+      - alert: PonyBruteForce
+        expr: sum(rate(pony_auth_logins_total{result=~"failure|throttled"}[2m])) > 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Evil Orc at the gate: {{ $value | printf "%.1f" }} failed or throttled logins per second.'

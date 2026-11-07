@@ -49,7 +49,7 @@ func newAPI(t *testing.T) *testAPI {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	a := &testAPI{raw: New(s, slog.New(slog.DiscardHandler), nil), tokens: map[string]string{}}
+	a := &testAPI{raw: New(s, slog.New(slog.DiscardHandler), nil, nil), tokens: map[string]string{}}
 	for _, u := range store.DemoUsers {
 		a.tokens[u.Name] = login(t, a.raw, u.Email, store.DemoPassword)
 	}
