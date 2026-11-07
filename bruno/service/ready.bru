@@ -1,0 +1,22 @@
+meta {
+  name: Ready
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/readyz
+  body: none
+  auth: none
+}
+
+docs {
+  /livez: the process is up (restart it if this fails).
+  /readyz: it can serve requests, i.e. the database answers (stop routing
+  traffic to it if this fails). /health is an alias of /livez.
+}
+
+assert {
+  res.status: eq 200
+  res.body.database: eq "ok"
+}

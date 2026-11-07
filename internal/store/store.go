@@ -99,6 +99,11 @@ func (s *Store) inTenantTx(ctx context.Context, restaurantID uuid.UUID, access p
 	})
 }
 
+// Ping checks the database is reachable.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
 // Close closes every connection in the pool.
 func (s *Store) Close() {
 	s.pool.Close()

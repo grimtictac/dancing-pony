@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -21,6 +22,7 @@ import (
 // Store is the persistence the API needs; *store.Store implements it.
 // Every dish method is scoped to one restaurant.
 type Store interface {
+	Ping(ctx context.Context) error
 	RestaurantBySlug(ctx context.Context, slug string) (tenant.Restaurant, error)
 	ListDishes(ctx context.Context, restaurantID uuid.UUID, opts store.ListOptions) ([]dish.Dish, string, error)
 	GetDish(ctx context.Context, restaurantID, dishID uuid.UUID) (dish.Dish, error)
@@ -49,7 +51,9 @@ func New(s Store, logger *slog.Logger, m *Metrics) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.root)
-	mux.HandleFunc("GET /health", a.health)
+	mux.HandleFunc("GET /health", a.livez) // kept for existing clients; same as /livez
+	mux.HandleFunc("GET /livez", a.livez)
+	mux.HandleFunc("GET /readyz", a.readyz)
 	for _, rt := range a.tenantRoutes() {
 		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.handler))
 	}
@@ -104,8 +108,27 @@ func (a *api) root(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"service": "The Orc Shack API", "status": "running"})
 }
 
-func (a *api) health(w http.ResponseWriter, _ *http.Request) {
+// livez reports that the process is up and serving. It checks nothing
+// else, so a supervisor restarts the process only when it is truly stuck.
+func (a *api) livez(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// readyz reports whether the API can serve requests: here, whether the
+// database answers within a second. A load balancer stops sending
+// traffic while it fails, without restarting anything.
+func (a *api) readyz(w http.ResponseWriter, r *http.Request) {
+	// Go note: context.WithTimeout derives a context that is cancelled
+	// after 1s; defer cancel() releases its timer when readyz returns,
+	// however it returns.
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+	defer cancel()
+	if err := a.store.Ping(ctx); err != nil {
+		info(r.Context()).Err = err
+		writeProblem(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "database": "ok"})
 }
 
 func (a *api) getDish(w http.ResponseWriter, r *http.Request, rest tenant.Restaurant) {
