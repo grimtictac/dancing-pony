@@ -14,9 +14,9 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 	t.Helper()
 	var req *http.Request
 	if body == "" {
-		req = httptest.NewRequest(method, path, nil)
+		req = httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	} else {
-		req = httptest.NewRequest(method, path, strings.NewReader(body))
+		req = httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

@@ -41,7 +41,7 @@ func main() {
 // run dispatches to a subcommand and returns the process exit code.
 func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
+		_, _ = fmt.Fprint(stderr, usage)
 		return 2
 	}
 
@@ -49,10 +49,10 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	case "serve":
 		return serve(args[1:], getenv, stderr)
 	case "help", "-h", "--help":
-		fmt.Fprint(stdout, usage)
+		_, _ = fmt.Fprint(stdout, usage)
 		return 0
 	default:
-		fmt.Fprintf(stderr, "pony: unknown command %q\n\n%s", args[0], usage)
+		_, _ = fmt.Fprintf(stderr, "pony: unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
 }
@@ -87,7 +87,8 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	ln, err := net.Listen("tcp", cfg.Addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		logger.Error("listen failed", "addr", cfg.Addr, "err", err)
 		return 1
@@ -129,7 +130,9 @@ func runServer(ctx context.Context, srv *http.Server, ln net.Listener, logger *s
 	}
 
 	logger.Info("shutting down", "timeout", shutdownTimeout.String())
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	// ctx is already cancelled here; keep its values but give shutdown its
+	// own deadline.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)

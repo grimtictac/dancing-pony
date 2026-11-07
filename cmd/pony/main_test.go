@@ -50,11 +50,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestServeFailsWhenAddressInUse(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
+	ln := listen(t)
 
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"serve", "-addr", ln.Addr().String()}, noEnv, &stdout, &stderr)
@@ -98,13 +94,12 @@ func TestRunServerServesUntilCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := startServer(ctx, httpapi.New(dish.NewMemoryStore(dish.Seed()...)), ln)
 
-	resp, err := http.Get("http://" + ln.Addr().String() + "/health")
+	status, err := get(t.Context(), "http://"+ln.Addr().String()+"/health")
 	if err != nil {
 		t.Fatalf("GET /health: %v", err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want %d", status, http.StatusOK)
 	}
 
 	cancel()
@@ -128,13 +123,11 @@ func TestRunServerFinishesInFlightRequestsOnShutdown(t *testing.T) {
 
 	status := make(chan int, 1)
 	go func() {
-		resp, err := http.Get("http://" + ln.Addr().String() + "/")
+		code, err := get(t.Context(), "http://"+ln.Addr().String()+"/")
 		if err != nil {
-			status <- 0
-			return
+			code = 0
 		}
-		resp.Body.Close()
-		status <- resp.StatusCode
+		status <- code
 	}()
 
 	<-started
@@ -158,13 +151,29 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// listen opens a loopback listener on a free port, closed when the test ends.
 func listen(t *testing.T) net.Listener {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = ln.Close() })
 	return ln
+}
+
+// get performs a GET and returns the status code, closing the response body.
+func get(ctx context.Context, url string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	return resp.StatusCode, resp.Body.Close()
 }
 
 func startServer(ctx context.Context, h http.Handler, ln net.Listener) <-chan error {

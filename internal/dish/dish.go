@@ -65,7 +65,7 @@ func Seed() []Dish {
 		{
 			ID:          "2",
 			Name:        "Mushroom Pie",
-			Description: "A savory pie filled with woodland mushrooms and herbs.",
+			Description: "A savoury pie filled with woodland mushrooms and herbs.",
 			Price:       Money{Amount: 12000, Currency: DefaultCurrency},
 			Image:       "https://example.com/mushroom-pie.jpg",
 		},
