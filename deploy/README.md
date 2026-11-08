@@ -112,5 +112,5 @@ psql "postgres://pony_app@127.0.0.1:15434/dancingpony?sslmode=verify-ca&sslrootc
   host, not `127.0.0.1`. The CA check still proves it's the real cluster.
 - Connect as `pony_app` to see what the API sees: nothing in a tenant table
   until `SELECT set_config('app.restaurant_id', '<uuid>', false);`. Keep
-  `doadmin` for schema work; it owns the tables, but `FORCE ROW LEVEL
-  SECURITY` applies to it too.
+  `doadmin` for schema work: on DigitalOcean it has `BYPASSRLS`, so it sees
+  every tenant's rows regardless of the policies.
