@@ -1,0 +1,130 @@
+// Grafana Alloy on the droplet: ships the API's metrics, the host's metrics
+// and the API's logs to Grafana Cloud. Installed as /etc/alloy/config.alloy
+// by deploy/alloy/setup.sh. The endpoints and the token come from
+// /etc/alloy/cloud.env (see cloud.env.example), never from this file.
+
+// ---- Metrics -------------------------------------------------------------
+
+prometheus.remote_write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_PROM_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_PROM_USER")
+      password = sys.env("GRAFANA_TOKEN")
+    }
+  }
+
+  // Lets one Grafana stack tell production apart from anything else later.
+  external_labels = {
+    env      = "prod",
+    instance = "silson.dev",
+  }
+}
+
+// The API's /metrics, on its internal-only listener.
+prometheus.scrape "pony" {
+  job_name        = "pony"
+  targets         = [{"__address__" = "127.0.0.1:9091"}]
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
+// Host CPU, memory, network and conntrack, so a load test shows whether the
+// box itself is the limit. Only the collectors we need, to keep series low.
+prometheus.exporter.unix "host" {
+  set_collectors = ["cpu", "loadavg", "meminfo", "netdev", "netstat", "conntrack", "filesystem", "pressure"]
+
+  filesystem {
+    mount_points_exclude = "^/(dev|proc|run|sys|snap)($|/)"
+  }
+}
+
+prometheus.scrape "host" {
+  job_name        = "node"
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
+// ---- Logs ----------------------------------------------------------------
+
+loki.write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_LOKI_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_LOKI_USER")
+      password = sys.env("GRAFANA_TOKEN")
+    }
+  }
+
+  external_labels = {
+    env = "prod",
+  }
+}
+
+// Journald fields aren't labels by default. Keep only the API's lines and
+// the kernel's (so firewall drops such as "conntrack table full" show up
+// next to the API's logs), and label them by unit or "kernel".
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit", "__journal__transport"]
+    separator     = ";"
+    regex         = "pony\\.service;.*|.*;kernel"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal__transport"]
+    regex         = "kernel"
+    target_label  = "unit"
+    replacement   = "kernel"
+  }
+}
+
+// The API writes one JSON object per line to stdout, which systemd sends to
+// the journal.
+loki.source.journal "system" {
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {job = "journal"}
+  forward_to    = [loki.process.pony.receiver]
+}
+
+// Nginx logs to files, not the journal. Its error log is the one that
+// matters (upstream failures, connection limits); access logs would cost
+// volume for little the API's own logs don't already say.
+local.file_match "nginx" {
+  path_targets = [{"__path__" = "/var/log/nginx/error.log", "unit" = "nginx"}]
+}
+
+loki.source.file "nginx" {
+  targets    = local.file_match.nginx.targets
+  forward_to = [loki.write.cloud.receiver]
+}
+
+// Lift the level out of the API's JSON into a label, so Grafana can filter
+// on it cheaply. Request IDs, routes and statuses stay in the line: they'd
+// be too many distinct labels, and LogQL's | json reads them at query time.
+loki.process "pony" {
+  stage.match {
+    selector = "{unit=\"pony.service\"}"
+
+    stage.json {
+      expressions = {level = "level"}
+    }
+
+    stage.labels {
+      values = {level = ""}
+    }
+  }
+
+  forward_to = [loki.write.cloud.receiver]
+}
