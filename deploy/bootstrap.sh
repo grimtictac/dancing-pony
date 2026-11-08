@@ -31,6 +31,7 @@ install -d -o root -g pony -m 750 /etc/pony /opt/pony /opt/pony/releases
 install -o root -g root -m 755 pony-deploy /usr/local/bin/pony-deploy
 install -o root -g root -m 644 systemd/pony.service /etc/systemd/system/pony.service
 install -o root -g root -m 644 nginx/pony-proxy.conf /etc/nginx/snippets/pony-proxy.conf
+install -o root -g root -m 644 nginx/pony-upstream.conf /etc/nginx/conf.d/pony-upstream.conf
 systemctl daemon-reload
 systemctl enable pony
 

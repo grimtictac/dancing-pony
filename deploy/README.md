@@ -70,7 +70,11 @@ The database is already shared.
    - The CA certificate as `/etc/pony/do-ca.crt`, mode 0644.
 5. **Nginx.** In the `silson.dev` server block, make `location /` contain
    `include /etc/nginx/snippets/pony-proxy.conf;`. Then run
-   `nginx -t && systemctl reload nginx`.
+   `nginx -t && systemctl reload nginx`. The snippet proxies to the
+   `pony` upstream in `/etc/nginx/conf.d/pony-upstream.conf`, which keeps
+   connections to the app open. Without that, every request left a
+   conntrack entry behind and at ~200 requests/s the kernel's table filled
+   and dropped packets.
 6. **GitHub secrets.** Under Settings, Environments, `production`:
    - `DEPLOY_SSH_KEY`: the private key;
    - `DEPLOY_HOST`: the droplet's IP;
