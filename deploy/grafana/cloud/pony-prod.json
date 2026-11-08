@@ -1,0 +1,302 @@
+{
+  "uid": "pony-prod",
+  "title": "Pony API (production)",
+  "description": "silson.dev via Grafana Alloy: API, host and logs. Import into Grafana Cloud (Dashboards → New → Import).",
+  "tags": ["pony", "prod"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "schemaVersion": 39,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "prom", "label": "Metrics", "type": "datasource",
+        "query": "prometheus", "regex": "/grafanacloud-.*-prom$/"
+      },
+      {
+        "name": "logs", "label": "Logs", "type": "datasource",
+        "query": "loki", "regex": "/grafanacloud-.*-logs$/"
+      },
+      {
+        "name": "env", "label": "Env", "type": "query", "refresh": 2,
+        "datasource": { "type": "prometheus", "uid": "${prom}" },
+        "query": { "query": "label_values(pony_http_requests_total, env)", "refId": "env" },
+        "definition": "label_values(pony_http_requests_total, env)"
+      },
+      {
+        "name": "route", "label": "Route", "type": "query", "refresh": 2,
+        "multi": true, "includeAll": true, "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "${prom}" },
+        "query": { "query": "label_values(pony_http_requests_total{env=\"$env\"}, route)", "refId": "route" },
+        "definition": "label_values(pony_http_requests_total{env=\"$env\"}, route)"
+      }
+    ]
+  },
+  "panels": [
+    { "id": 100, "type": "row", "title": "Overview", "collapsed": false, "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 } },
+    {
+      "id": 1, "type": "stat", "title": "API up",
+      "gridPos": { "x": 0, "y": 1, "w": 3, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "min(up{env=\"$env\", job=\"pony\"})" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }],
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 1, "color": "green" }] }
+        }
+      }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Requests / s",
+      "gridPos": { "x": 3, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(pony_http_requests_total{env=\"$env\", route=~\"$route\"}[$__rate_interval]))" }],
+      "options": { "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 1, "noValue": "0" } }
+    },
+    {
+      "id": 3, "type": "stat", "title": "p95 latency (in the app)",
+      "gridPos": { "x": 7, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "1000 * histogram_quantile(0.95, sum by (le) (rate(pony_http_request_duration_seconds_bucket{env=\"$env\", route=~\"$route\"}[$__rate_interval])))" }],
+      "options": { "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms", "decimals": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 50, "color": "orange" }, { "value": 150, "color": "red" }] }
+        }
+      }
+    },
+    {
+      "id": 4, "type": "stat", "title": "5xx ratio",
+      "gridPos": { "x": 11, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(pony_http_requests_total{env=\"$env\", status=~\"5..\"}[5m])) / sum(rate(pony_http_requests_total{env=\"$env\"}[5m]))" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "decimals": 2, "noValue": "0",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 0.01, "color": "red" }] }
+        }
+      }
+    },
+    {
+      "id": 5, "type": "gauge", "title": "Host CPU",
+      "gridPos": { "x": 15, "y": 1, "w": 3, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "1 - avg(rate(node_cpu_seconds_total{env=\"$env\", mode=\"idle\"}[$__rate_interval]))" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 0.7, "color": "orange" }, { "value": 0.9, "color": "red" }] }
+        }
+      }
+    },
+    {
+      "id": 6, "type": "gauge", "title": "Host memory used",
+      "gridPos": { "x": 18, "y": 1, "w": 3, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "1 - node_memory_MemAvailable_bytes{env=\"$env\"} / node_memory_MemTotal_bytes{env=\"$env\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 0.8, "color": "orange" }, { "value": 0.9, "color": "red" }] }
+        }
+      }
+    },
+    {
+      "id": 7, "type": "gauge", "title": "Conntrack table",
+      "gridPos": { "x": 21, "y": 1, "w": 3, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "node_nf_conntrack_entries{env=\"$env\"} / node_nf_conntrack_entries_limit{env=\"$env\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 0.7, "color": "orange" }, { "value": 0.9, "color": "red" }] }
+        }
+      }
+    },
+
+    { "id": 101, "type": "row", "title": "Latency (time inside the app, excludes the network)", "collapsed": false, "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 } },
+    {
+      "id": 10, "type": "timeseries", "title": "Latency percentiles (all selected routes)",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "1000 * histogram_quantile(0.50, sum by (le) (rate(pony_http_request_duration_seconds_bucket{env=\"$env\", route=~\"$route\"}[$__rate_interval])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "1000 * histogram_quantile(0.95, sum by (le) (rate(pony_http_request_duration_seconds_bucket{env=\"$env\", route=~\"$route\"}[$__rate_interval])))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "1000 * histogram_quantile(0.99, sum by (le) (rate(pony_http_request_duration_seconds_bucket{env=\"$env\", route=~\"$route\"}[$__rate_interval])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 1, "custom": { "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "p95 latency by route",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "1000 * histogram_quantile(0.95, sum by (le, route) (rate(pony_http_request_duration_seconds_bucket{env=\"$env\", route=~\"$route\"}[$__rate_interval])))", "legendFormat": "{{route}}" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 1 } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"], "sortBy": "Max", "sortDesc": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Mean latency by route",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "1000 * sum by (route) (rate(pony_http_request_duration_seconds_sum{env=\"$env\", route=~\"$route\"}[$__rate_interval])) / sum by (route) (rate(pony_http_request_duration_seconds_count{env=\"$env\", route=~\"$route\"}[$__rate_interval]))", "legendFormat": "{{route}}" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 1 } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 13, "type": "heatmap", "title": "Latency distribution",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum by (le) (increase(pony_http_request_duration_seconds_bucket{env=\"$env\", route=~\"$route\"}[$__rate_interval]))", "format": "heatmap", "legendFormat": "{{le}}" }],
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "s" },
+        "color": { "mode": "scheme", "scheme": "Oranges", "steps": 64 },
+        "cellGap": 1
+      }
+    },
+
+    { "id": 102, "type": "row", "title": "Traffic", "collapsed": false, "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 } },
+    {
+      "id": 20, "type": "timeseries", "title": "Requests / s by route",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum by (route) (rate(pony_http_requests_total{env=\"$env\", route=~\"$route\"}[$__rate_interval]))", "legendFormat": "{{route}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 30 } } },
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 21, "type": "bargauge", "title": "Hits per route (time range)",
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sort_desc(round(sum by (route) (increase(pony_http_requests_total{env=\"$env\", route=~\"$route\"}[$__range]))))", "legendFormat": "{{route}}", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "continuous-BlYlRd" } } },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true }
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "Error responses / s by status",
+      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum by (status) (rate(pony_http_requests_total{env=\"$env\", route=~\"$route\", status=~\"[45]..\"}[$__rate_interval]))", "legendFormat": "{{status}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "noValue": "0" } }
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Logins and reviews",
+      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (result) (increase(pony_auth_logins_total{env=\"$env\"}[5m]))", "legendFormat": "login {{result}}" },
+        { "refId": "B", "expr": "sum by (sentiment) (increase(pony_reviews_written_total{env=\"$env\"}[5m]))", "legendFormat": "review {{sentiment}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } }
+    },
+
+    { "id": 103, "type": "row", "title": "Host (1 vCPU, 1 GB droplet)", "collapsed": false, "gridPos": { "x": 0, "y": 39, "w": 24, "h": 1 } },
+    {
+      "id": 30, "type": "timeseries", "title": "CPU by mode",
+      "gridPos": { "x": 0, "y": 40, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (mode) (rate(node_cpu_seconds_total{env=\"$env\", mode!=\"idle\"}[$__rate_interval]))", "legendFormat": "{{mode}}" },
+        { "refId": "B", "expr": "rate(process_cpu_seconds_total{env=\"$env\", job=\"pony\"}[$__rate_interval])", "legendFormat": "pony process" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 40 } },
+        "overrides": [{ "matcher": { "id": "byName", "options": "pony process" }, "properties": [{ "id": "custom.stacking", "value": { "mode": "none" } }, { "id": "custom.fillOpacity", "value": 0 }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [6, 4] } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "white" } }] }]
+      },
+      "options": { "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 31, "type": "timeseries", "title": "Conntrack entries vs limit",
+      "gridPos": { "x": 8, "y": 40, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "node_nf_conntrack_entries{env=\"$env\"}", "legendFormat": "entries" },
+        { "refId": "B", "expr": "node_nf_conntrack_entries_limit{env=\"$env\"}", "legendFormat": "limit" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0 },
+        "overrides": [{ "matcher": { "id": "byName", "options": "limit" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [6, 4] } }] }]
+      }
+    },
+    {
+      "id": 32, "type": "timeseries", "title": "Memory",
+      "gridPos": { "x": 16, "y": 40, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "node_memory_MemTotal_bytes{env=\"$env\"} - node_memory_MemAvailable_bytes{env=\"$env\"}", "legendFormat": "host used" },
+        { "refId": "B", "expr": "process_resident_memory_bytes{env=\"$env\", job=\"pony\"}", "legendFormat": "pony RSS" },
+        { "refId": "C", "expr": "go_memstats_heap_inuse_bytes{env=\"$env\", job=\"pony\"}", "legendFormat": "pony heap" },
+        { "refId": "D", "expr": "node_memory_MemTotal_bytes{env=\"$env\"}", "legendFormat": "total" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "min": 0 },
+        "overrides": [{ "matcher": { "id": "byName", "options": "total" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [6, 4] } }] }]
+      }
+    },
+    {
+      "id": 33, "type": "timeseries", "title": "Network",
+      "gridPos": { "x": 0, "y": 48, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(node_network_receive_bytes_total{env=\"$env\", device!=\"lo\"}[$__rate_interval]))", "legendFormat": "in" },
+        { "refId": "B", "expr": "-sum(rate(node_network_transmit_bytes_total{env=\"$env\", device!=\"lo\"}[$__rate_interval]))", "legendFormat": "out" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 34, "type": "timeseries", "title": "Pressure (time stalled)",
+      "gridPos": { "x": 8, "y": 48, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "rate(node_pressure_cpu_waiting_seconds_total{env=\"$env\"}[$__rate_interval])", "legendFormat": "cpu" },
+        { "refId": "B", "expr": "rate(node_pressure_memory_waiting_seconds_total{env=\"$env\"}[$__rate_interval])", "legendFormat": "memory" },
+        { "refId": "C", "expr": "rate(node_pressure_io_waiting_seconds_total{env=\"$env\"}[$__rate_interval])", "legendFormat": "io" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } }
+    },
+    {
+      "id": 35, "type": "timeseries", "title": "Goroutines",
+      "gridPos": { "x": 16, "y": 48, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "go_goroutines{env=\"$env\", job=\"pony\"}", "legendFormat": "goroutines" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } }
+    },
+
+    { "id": 104, "type": "row", "title": "Logs", "collapsed": false, "gridPos": { "x": 0, "y": 55, "w": 24, "h": 1 } },
+    {
+      "id": 40, "type": "timeseries", "title": "API log lines by level",
+      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 6 },
+      "datasource": { "type": "loki", "uid": "${logs}" },
+      "targets": [{ "refId": "A", "expr": "sum by (level) (count_over_time({env=\"$env\", unit=\"pony.service\"} [$__auto]))", "legendFormat": "{{level}}" }],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ERROR" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "WARN" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "INFO" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      }
+    },
+    {
+      "id": 41, "type": "logs", "title": "API warnings and errors",
+      "gridPos": { "x": 0, "y": 62, "w": 12, "h": 10 },
+      "datasource": { "type": "loki", "uid": "${logs}" },
+      "targets": [{ "refId": "A", "expr": "{env=\"$env\", unit=\"pony.service\", level=~\"WARN|ERROR\"}" }],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true }
+    },
+    {
+      "id": 42, "type": "logs", "title": "Kernel and Nginx (conntrack drops, upstream errors)",
+      "gridPos": { "x": 12, "y": 62, "w": 12, "h": 10 },
+      "datasource": { "type": "loki", "uid": "${logs}" },
+      "targets": [{ "refId": "A", "expr": "{env=\"$env\", unit=~\"kernel|nginx\"}" }],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true }
+    }
+  ]
+}
