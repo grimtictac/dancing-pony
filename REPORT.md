@@ -11,6 +11,13 @@ tenant; its menu lives at `/restaurants/orc-shack/dishes`.
 
 ## Try it
 
+- **In the browser:** [silson.dev/docs](https://silson.dev/docs), the
+  interactive API reference. Log in with a demo user, paste the token under
+  Authentication, then send any request. The spec is at
+  [/openapi.yaml](https://silson.dev/openapi.yaml).
+- **In the terminal:** `hurl --test try-it.hurl` walks through every feature
+  on production in 32 checked requests ([hurl.dev](https://hurl.dev); a
+  Docker command is in the file).
 - **Bruno:** open the `bruno/` collection, choose the `production` (or
   `local`) environment, run **Auth → Log in (Frodo)**, then any request.
   Requests act as whoever logged in last.
