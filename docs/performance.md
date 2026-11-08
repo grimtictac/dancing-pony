@@ -8,7 +8,7 @@ Measured first, then fixed only what the measurements pointed at.
   the size of the production droplet. Postgres gets 1 vCPU and 1 GB, the
   smallest managed plan. Both run in an isolated compose stack
   (`make load-up`).
-- **Data:** the demo data plus 2,000 dishes for orc-shack, 1,000 users and
+- **Data:** a separate `load-test` restaurant with 2,000 dishes, 1,000 users and
   80,000 reviews, 40 per dish (`loadtest/fixture.sql`).
 - **Load:** k6 (`loadtest/browse.js`), a logged-in customer at a fixed
   arrival rate. 50% list a page (random sort), 30% search (including the

@@ -4,11 +4,23 @@
 // iterations rather than as a lower request rate.
 //
 //   make load-up && make load-test          (RATE=200 DURATION=1m to change)
+//   make load-test-prod                     (against https://silson.dev)
 import http from 'k6/http';
 import { check } from 'k6';
 
 const BASE = __ENV.BASE_URL || 'http://127.0.0.1:18083';
-const MENU = `${BASE}/restaurants/orc-shack/dishes`;
+const MENU = `${BASE}/restaurants/${__ENV.RESTAURANT || 'load-test'}/dishes`;
+
+// The bar for a 1 vCPU / 512 MB "Shire server". k6 exits non-zero if any is
+// missed. Against a remote server the client's network latency would
+// dominate these, so REMOTE=1 keeps only the error rate; server-side latency
+// comes from the app's own metrics instead (loadtest/latency.py).
+const thresholds = { http_req_failed: ['rate<0.01'] };
+if (!__ENV.REMOTE) {
+  thresholds['http_req_duration{name:list}'] = ['p(95)<250'];
+  thresholds['http_req_duration{name:search}'] = ['p(95)<250'];
+  thresholds['http_req_duration{name:dish}'] = ['p(95)<100'];
+}
 
 export const options = {
   scenarios: {
@@ -21,14 +33,7 @@ export const options = {
       maxVUs: 300,
     },
   },
-  // The bar for a 1 vCPU / 512 MB "Shire server". k6 exits non-zero if any
-  // is missed.
-  thresholds: {
-    http_req_failed: ['rate<0.01'],
-    'http_req_duration{name:list}': ['p(95)<250'],
-    'http_req_duration{name:search}': ['p(95)<250'],
-    'http_req_duration{name:dish}': ['p(95)<100'],
-  },
+  thresholds,
   summaryTrendStats: ['med', 'p(95)', 'p(99)', 'max'],
 };
 

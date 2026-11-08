@@ -123,6 +123,7 @@ clean: ## Remove build output
 .PHONY: load-up load-test load-stats load-down
 load-up: ## Start the load-test stack (app limited to 1 vCPU / 512 MB) with bulk data
 	$(COMPOSE_LOAD) up -d --build --wait app
+	$(call LOAD_PSQL,-c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
 	$(call LOAD_PSQL) < loadtest/fixture.sql
 
 load-test: ## Run the k6 browsing load test against it (RATE=100 DURATION=30s)
@@ -134,3 +135,5 @@ load-stats: ## Show where Postgres spent its time during the last load test
 
 load-down: ## Remove the load-test stack and its data
 	$(COMPOSE_LOAD) down -v --remove-orphans
+
+include loadtest/prod.mk
