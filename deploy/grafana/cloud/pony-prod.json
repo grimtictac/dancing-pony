@@ -297,6 +297,74 @@
       "datasource": { "type": "loki", "uid": "${logs}" },
       "targets": [{ "refId": "A", "expr": "{env=\"$env\", unit=~\"kernel|nginx\"}" }],
       "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true }
+    },
+
+    { "id": 105, "type": "row", "title": "In-memory cache (PONY_CACHE; flat at 0 when off)", "collapsed": false, "gridPos": { "x": 0, "y": 72, "w": 24, "h": 1 } },
+    {
+      "id": 50, "type": "stat", "title": "Hit ratio",
+      "gridPos": { "x": 0, "y": 73, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum by (cache) (rate(pony_cache_lookups_total{env=\"$env\", result=\"hit\"}[5m])) / sum by (cache) (rate(pony_cache_lookups_total{env=\"$env\"}[5m]))", "legendFormat": "{{cache}}" }],
+      "options": { "graphMode": "area", "textMode": "value_and_name" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "decimals": 1, "noValue": "off / idle",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 0.5, "color": "orange" }, { "value": 0.9, "color": "green" }] }
+        }
+      }
+    },
+    {
+      "id": 51, "type": "timeseries", "title": "Lookups / s by cache and result",
+      "gridPos": { "x": 6, "y": 73, "w": 10, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "sum by (cache, result) (rate(pony_cache_lookups_total{env=\"$env\"}[$__rate_interval]))", "legendFormat": "{{cache}} {{result}}" }],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*hit" }, "properties": [{ "id": "custom.lineStyle", "value": { "fill": "solid" } }] },
+          { "matcher": { "id": "byRegexp", "options": ".*miss" }, "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [6, 4] } }] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 52, "type": "stat", "title": "Database lookups saved (time range)",
+      "gridPos": { "x": 16, "y": 73, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [{ "refId": "A", "expr": "round(sum(increase(pony_cache_lookups_total{env=\"$env\", result=\"hit\"}[$__range])))", "instant": true }],
+      "options": { "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "noValue": "0" } }
+    },
+
+    { "id": 106, "type": "row", "title": "Failed connections (kernel and Nginx; k6 sees these as timeouts)", "collapsed": false, "gridPos": { "x": 0, "y": 81, "w": 24, "h": 1 } },
+    {
+      "id": 60, "type": "timeseries", "title": "Dropped and retried connections / s (host)",
+      "description": "conntrack drop / insert failed: the kernel threw a packet away because its connection table was full. SYN retransmits: a connection attempt got no answer and was retried (about 1 s later), which is what a dropped packet looks like from the sender. Listen overflows: a listening socket's queue was full.",
+      "gridPos": { "x": 0, "y": 82, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(node_nf_conntrack_stat_drop{env=\"$env\"}[$__rate_interval]))", "legendFormat": "conntrack drop" },
+        { "refId": "B", "expr": "sum(rate(node_nf_conntrack_stat_insert_failed{env=\"$env\"}[$__rate_interval]))", "legendFormat": "conntrack insert failed" },
+        { "refId": "C", "expr": "sum(rate(node_nf_conntrack_stat_early_drop{env=\"$env\"}[$__rate_interval]))", "legendFormat": "conntrack early drop" },
+        { "refId": "D", "expr": "sum(rate(node_netstat_TcpExt_TCPSynRetrans{env=\"$env\"}[$__rate_interval]))", "legendFormat": "SYN retransmits" },
+        { "refId": "E", "expr": "sum(rate(node_netstat_TcpExt_ListenOverflows{env=\"$env\"}[$__rate_interval]))", "legendFormat": "listen queue overflows" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "cps", "min": 0, "noValue": "0" } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max", "sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 61, "type": "timeseries", "title": "Connection errors in the logs",
+      "description": "Counted from the shipped logs. The kernel rate-limits its own messages (\"N callbacks suppressed\"), so the conntrack line undercounts: use the panel on the left for totals.",
+      "gridPos": { "x": 12, "y": 82, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "${logs}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(count_over_time({env=\"$env\", unit=\"nginx\"} |= \"upstream timed out\" [$__auto]))", "legendFormat": "nginx: upstream timed out" },
+        { "refId": "B", "expr": "sum(count_over_time({env=\"$env\", unit=\"nginx\"} |~ `connect\\(\\) failed|no live upstreams` [$__auto]))", "legendFormat": "nginx: connect failed" },
+        { "refId": "C", "expr": "sum(count_over_time({env=\"$env\", unit=\"kernel\"} |= \"table full\" [$__auto]))", "legendFormat": "kernel: conntrack table full" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "noValue": "0", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     }
   ]
 }
