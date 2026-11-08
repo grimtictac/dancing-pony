@@ -74,7 +74,9 @@ The database is already shared.
    `pony` upstream in `/etc/nginx/conf.d/pony-upstream.conf`, which keeps
    connections to the app open. Without that, every request left a
    conntrack entry behind and at ~200 requests/s the kernel's table filled
-   and dropped packets.
+   and dropped packets. Also raise `worker_connections` in
+   `/etc/nginx/nginx.conf` from Ubuntu's 768 to 4096: at ~500 requests/s
+   Nginx ran out and reset connections.
 6. **GitHub secrets.** Under Settings, Environments, `production`:
    - `DEPLOY_SSH_KEY`: the private key;
    - `DEPLOY_HOST`: the droplet's IP;

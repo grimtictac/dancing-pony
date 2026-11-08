@@ -113,7 +113,20 @@ full-text first with fuzzy matching as a fallback, and rating totals kept by
 a trigger. Result: about 250 → 1,440 requests/s.
 Details: [docs/performance.md](docs/performance.md).
 
-*Production measurements, caching and the rate limiter: to follow.*
+**In production** (1 vCPU droplet, managed Postgres across the network):
+
+- **About 300–350 requests/s with no errors.** Getting there meant fixing
+  two limits outside the app, found through host metrics and kernel logs
+  shipped to Grafana Cloud: Nginx opened a connection per request, which
+  filled the kernel's connection table (fixed with upstream keepalive), and
+  Nginx's own connection limit (raised).
+- **The session and restaurant cache** (`PONY_CACHE=on|off`, so it can be
+  measured): at 300 requests/s, the app's mean time for a menu page fell
+  from 233 ms to 20 ms and the client p95 from 1.5 s to 230 ms. With the
+  cache off the CPU was half idle: requests were queueing for the small
+  database pool, and two fewer round trips per request freed it.
+
+Details: [docs/performance.md](docs/performance.md#production-silsondev-8-november-2026).
 
 ## Trade-offs and what was left out
 

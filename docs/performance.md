@@ -136,5 +136,71 @@ Next steps, if needed (not done: measure first):
   function that takes the tenant as a required argument, or an external
   search index.
 
-Production has one box for both the app and Postgres, so these numbers are
-an upper bound for the droplet. Re-measure there after deploying.
+## Production (silson.dev), 8 November 2026
+
+The droplet (1 vCPU, 1 GB, London) runs Nginx and the app; Postgres is
+DigitalOcean's managed service on the private network. Load came from a
+laptop in South Africa, so every client time includes a ~150 ms round trip;
+the app's own time comes from its metrics (`loadtest/latency.py`), and the
+host's from Grafana Alloy (`deploy/alloy`). The data is the same fixture, in
+its own `load-test` restaurant (`make load-fixture-prod`).
+
+### Two limits that weren't the app
+
+1. **The kernel's connection table.** At ~200 req/s about 1% of requests got
+   no answer, and the kernel logged `nf_conntrack: table full, dropping
+   packet`. Nginx opened a new connection to the app for every request, and
+   each closed one stays in the table (8,192 entries on this droplet) for two
+   minutes. **Fix:** an `upstream` block with `keepalive`
+   (`deploy/nginx/pony-upstream.conf`), so Nginx reuses a pool of
+   connections. With it, the table peaked at about half full even at
+   500 req/s, with no drops.
+2. **Nginx's connection limit.** At 500 req/s Nginx logged "768
+   worker_connections are not enough" and reset connections. Raised to 4096
+   in `/etc/nginx/nginx.conf`. This doesn't add capacity; it makes overload
+   queue instead of fail.
+
+The firewall (ufw) has no rate limits; it was involved only because its
+stateful rules put every connection in the kernel's table.
+
+### Capacity, with keepalive and the cache (60 s steps)
+
+| Offered | Served | k6 errors | Client p95 | Notes |
+|---|---|---|---|---|
+| 200 req/s | 195 | 0 of 11,981 | 171 ms | |
+| 300 req/s | 295 | 0 of 17,957 | 201 ms | |
+| 400 req/s | 378 | 0 of 23,346 | 923 ms | saturated: queueing, dropped iterations |
+| 500 req/s | | connection resets | | Nginx limit (since raised); CPU ~88% |
+
+**About 300–350 req/s with no errors and a sane tail** on a 1 vCPU droplet.
+
+### The session and restaurant cache (`PONY_CACHE`), 300 req/s for 90 s
+
+Same rate, same data, the app restarted with the cache off, then on:
+
+| | cache off | cache on |
+|---|---|---|
+| k6 errors | 4 of 26,501 | 0 of 26,939 |
+| Dropped iterations | 502 | 63 |
+| Client p95 | 1.54 s | 230 ms |
+| App time, list: mean / p95 | 233 ms / 1.81 s | 20 ms / 95 ms |
+| App time, dish: mean / p95 | 228 ms / 1.81 s | 14 ms / 81 ms |
+| Host CPU busy | 45% | 39% |
+
+The cache turns an overloaded server into a comfortable one at this rate:
+**about 12× lower mean latency in the app and 19× lower p95.**
+
+Why so much more than "2 round trips out of 6" suggests: with the cache off
+the host was only 45% busy, so the app was *waiting*, not computing. Each
+request holds a database connection for six round trips across the network,
+and the pool is small (pgxpool's default is 4 connections). At 300 req/s
+the pool runs out and requests queue for a connection. Taking two round
+trips out of every request frees the pool, and the queue disappears.
+
+The next levers, measured in this order if needed: a larger pool
+(`pool_max_conns` in the URL, within the managed database's connection
+limit), then pipelining `BEGIN`, `set_config` and the query in one batch.
+
+Caveats: the cache serves a session for up to 30 s and a restaurant for 60 s
+after a change made outside this process (logout in this process evicts at
+once; see ADR-002). One run each, from one client location.
