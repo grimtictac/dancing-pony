@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"the-dancing-pony-v2/internal/apidocs"
 	"the-dancing-pony-v2/internal/auth"
 	"the-dancing-pony-v2/internal/authz"
 	"the-dancing-pony-v2/internal/dish"
@@ -95,22 +96,42 @@ func New(s Store, photos photo.Store, logger *slog.Logger, m *Metrics, trusted [
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", a.root)
-	mux.HandleFunc("GET /health", a.livez) // kept for existing clients; same as /livez
-	mux.HandleFunc("GET /livez", a.livez)
-	mux.HandleFunc("GET /readyz", a.readyz)
-	// Public, like a CDN: <img> tags can't send a bearer token. Photo keys
-	// carry 122 random bits, so they can't be guessed or enumerated.
-	mux.HandleFunc("GET "+photo.URLPrefix+"{restaurant}/{file}", a.servePhoto)
-	// Everything below needs a logged-in user, except register and login.
-	mux.HandleFunc("POST /auth/register", a.register)
-	mux.HandleFunc("POST /auth/login", a.login)
-	mux.HandleFunc("POST /auth/logout", a.authed(a.logout))
-	mux.HandleFunc("GET /auth/me", a.authed(a.me))
-	for _, rt := range a.tenantRoutes() {
-		mux.HandleFunc(rt.pattern, a.inRestaurant(rt.action, rt.handler))
+	for _, rt := range a.routes() {
+		mux.HandleFunc(rt.pattern, rt.handler)
 	}
+	// /docs and /openapi.yaml describe the API rather than being part of it,
+	// so they aren't in routes() and the spec doesn't list them.
+	apidocs.Register(mux)
 	return accessLog(logger, m, router{mux: mux})
+}
+
+// route is one endpoint of the API.
+type route struct {
+	pattern string
+	handler http.HandlerFunc
+}
+
+// routes lists every endpoint. TestOpenAPIListsEveryRoute checks it against
+// the OpenAPI spec (internal/apidocs/openapi.yaml), both ways.
+func (a *api) routes() []route {
+	rs := []route{
+		{"GET /{$}", a.root},
+		{"GET /health", a.livez}, // kept for existing clients; same as /livez
+		{"GET /livez", a.livez},
+		{"GET /readyz", a.readyz},
+		// Public, like a CDN: <img> tags can't send a bearer token. Photo
+		// keys carry 122 random bits, so they can't be guessed or enumerated.
+		{"GET " + photo.URLPrefix + "{restaurant}/{file}", a.servePhoto},
+		// Everything below needs a logged-in user, except register and login.
+		{"POST /auth/register", a.register},
+		{"POST /auth/login", a.login},
+		{"POST /auth/logout", a.authed(a.logout)},
+		{"GET /auth/me", a.authed(a.me)},
+	}
+	for _, rt := range a.tenantRoutes() {
+		rs = append(rs, route{rt.pattern, a.inRestaurant(rt.action, rt.handler)})
+	}
+	return rs
 }
 
 // tenantRoute is a route within one restaurant.

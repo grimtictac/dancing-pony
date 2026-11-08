@@ -1,0 +1,10 @@
+# Lint rules for openapi.yaml (make api-lint): Redocly's recommended set,
+# minus two that don't fit.
+extends:
+  - recommended
+rules:
+  # The health checks have no client errors to document.
+  operation-4xx-response: off
+  # An assessment submission, not a published product: no licence to cite.
+  info-license: off
+  info-license-strict: off

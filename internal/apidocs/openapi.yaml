@@ -1,0 +1,695 @@
+openapi: 3.1.0
+info:
+  title: The Dancing Pony API
+  version: "1.0"
+  summary: Menus, reviews and photos for many restaurants, one of which is The Orc Shack.
+  description: |
+    A multi-tenant menu API: each restaurant (`orc-shack`, `green-dragon`) has
+    its own dishes, and Postgres Row-Level Security keeps them apart.
+
+    ## Try it
+
+    1. Open **POST /auth/login** and send one of the demo accounts below.
+    2. Copy the `token` from the response.
+    3. Paste it under **Authentication** (bearer), then call any endpoint.
+
+    | Email | Password | Can |
+    |---|---|---|
+    | `frodo@shire.example` | `pony-demo-password` | browse and review (customer) |
+    | `owner@orc-shack.example` | `pony-demo-password` | manage The Orc Shack's dishes |
+    | `owner@green-dragon.example` | `pony-demo-password` | manage The Green Dragon's dishes |
+
+    Or register your own customer with **POST /auth/register**.
+
+    ## Conventions
+
+    - **Logins are required** for everything except health, photos, register
+      and login.
+    - **IDs** are 22-character base62 strings.
+    - **Prices** are whole numbers in the currency's minor unit (cents), and
+      must be in the restaurant's currency (ZAR for the demo restaurants).
+    - **Errors** are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem
+      details (`application/problem+json`) with a human-readable `detail`.
+    - **Unknown JSON fields are errors**, so a typo such as `"prise"` is
+      reported rather than ignored. Bodies are limited to 64 KiB.
+    - **Rate limit:** each logged-in customer may make 30 requests at once,
+      then 10 a second. Beyond that: `429` with `Retry-After`.
+    - **Wrong passwords** are slowed down (`429` with `Retry-After`), never
+      locked out.
+servers:
+  - url: /
+    description: This server
+  - url: https://silson.dev
+    description: Production
+
+tags:
+  - name: Auth
+    description: Accounts and sessions. Tokens are opaque and revocable; logout ends one at once.
+  - name: Dishes
+    description: A restaurant's menu. Anyone logged in may read it; owners and staff manage it.
+  - name: Reviews
+    description: One review per customer per dish, scored for sentiment when written.
+  - name: Photos
+    description: Upload a dish photo; it's checked, resized and served by the API.
+  - name: Health
+    description: For load balancers, deploys and uptime checks. No login needed.
+
+security:
+  - bearer: []
+
+paths:
+  /:
+    get:
+      tags: [Health]
+      summary: Service banner
+      operationId: root
+      security: []
+      responses:
+        "200":
+          description: The service is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: { type: string, examples: ["The Orc Shack API"] }
+                  status: { type: string, examples: [running] }
+
+  /livez:
+    get:
+      tags: [Health]
+      summary: Liveness
+      description: The process is up and serving. Checks nothing else, so a supervisor restarts it only when truly stuck.
+      operationId: livez
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/StatusOK"
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness (old name)
+      description: Same as `/livez`, kept for existing clients.
+      operationId: health
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/StatusOK"
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness
+      description: Can serve requests, which here means the database answers within a second. Deploys wait on this before switching traffic.
+      operationId: readyz
+      security: []
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, examples: [ok] }
+                  database: { type: string, examples: [ok] }
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a customer
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100, examples: [Peregrin Took] }
+                email: { type: string, format: email, examples: [pippin@shire.example] }
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+                  description: 12 to 128 characters; no composition rules (NIST SP 800-63B).
+                  examples: [second breakfast please]
+      responses:
+        "201":
+          description: Registered. Log in to get a token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: The email is already registered.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      description: |
+        Returns an opaque session token for `Authorization: Bearer`. Only its
+        hash is stored. An unknown email and a wrong password get the same
+        answer, in the same time. Repeated failures are throttled per email,
+        per IP and per email + IP.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+            example:
+              email: frodo@shire.example
+              password: pony-demo-password
+      responses:
+        "200":
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, description: "Send as `Authorization: Bearer <token>`." }
+                  token_type: { type: string, const: Bearer }
+                  expires_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Wrong email or password.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out
+      description: Ends this session at once; the token stops working immediately.
+      operationId: logout
+      responses:
+        "204": { description: Logged out. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Who am I?
+      operationId: me
+      responses:
+        "200":
+          description: The logged-in user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /restaurants/{slug}/dishes:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+    get:
+      tags: [Dishes]
+      summary: List or search the menu
+      description: |
+        Keyset pagination: when there are more dishes, the `Link` header holds
+        the URL of the next page (`rel="next"`). Search is full-text, with a
+        fallback to close matches on the name, so `mushrom` finds Mushroom Pie.
+      operationId: listDishes
+      parameters:
+        - name: q
+          in: query
+          description: Search the name and description.
+          schema: { type: string, examples: [mushrom] }
+        - name: min_price
+          in: query
+          description: Lowest price, in minor units.
+          schema: { type: integer, minimum: 0 }
+        - name: max_price
+          in: query
+          description: Highest price, in minor units.
+          schema: { type: integer, minimum: 0, examples: [20000] }
+        - name: sort
+          in: query
+          description: Ordering; a leading `-` reverses it. Default is oldest first.
+          schema: { type: string, enum: [name, "-name", price, "-price"] }
+        - $ref: "#/components/parameters/limit"
+        - name: cursor
+          in: query
+          description: Opaque; copy it from the `Link` header of the previous page.
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of dishes.
+          headers:
+            Link:
+              description: '`<next page URL>; rel="next"` when there are more.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Dish" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Dishes]
+      summary: Add a dish
+      description: Owners and staff of this restaurant only.
+      operationId: createDish
+      requestBody:
+        $ref: "#/components/requestBodies/Dish"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dish" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /restaurants/{slug}/dishes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+      - $ref: "#/components/parameters/dishId"
+    get:
+      tags: [Dishes]
+      summary: View a dish
+      description: A dish from another restaurant is `404`, as if it didn't exist.
+      operationId: getDish
+      responses:
+        "200":
+          description: The dish.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dish" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    put:
+      tags: [Dishes]
+      summary: Replace a dish
+      description: Owners and staff of this restaurant only. Rating and photo are kept.
+      operationId: updateDish
+      requestBody:
+        $ref: "#/components/requestBodies/Dish"
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dish" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Dishes]
+      summary: Delete a dish
+      description: Owners and staff of this restaurant only. Its reviews and photo go with it.
+      operationId: deleteDish
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /restaurants/{slug}/dishes/{id}/photo:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+      - $ref: "#/components/parameters/dishId"
+    put:
+      tags: [Photos]
+      summary: Upload or replace a dish's photo
+      description: |
+        The body is the image itself: JPEG, PNG, GIF or WebP, up to 10 MiB. The
+        type is detected from the bytes, not the `Content-Type`. It's resized,
+        re-encoded (which drops metadata such as GPS) and stored under a random
+        name. Owners and staff only.
+      operationId: putPhoto
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Photo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415":
+          description: Not a supported image type.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: An image of a supported type that couldn't be decoded, or is too large in pixels.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Photos]
+      summary: Remove a dish's photo
+      operationId: deletePhoto
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /photos/{restaurant}/{file}:
+    get:
+      tags: [Photos]
+      summary: Fetch a photo
+      description: |
+        Public, like a CDN, because `<img>` tags can't send a token. File names
+        carry 122 random bits, so they can't be guessed. Use the `url` from a
+        dish's `photo`.
+      operationId: servePhoto
+      security: []
+      parameters:
+        - name: restaurant
+          in: path
+          required: true
+          schema: { type: string }
+        - name: file
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The photo.
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /restaurants/{slug}/dishes/{id}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+      - $ref: "#/components/parameters/dishId"
+    get:
+      tags: [Reviews]
+      summary: A dish's reviews
+      description: Most recent first.
+      operationId: listReviews
+      parameters:
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Reviews.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /restaurants/{slug}/dishes/{id}/reviews/me:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+      - $ref: "#/components/parameters/dishId"
+    put:
+      tags: [Reviews]
+      summary: Write or replace my review
+      description: |
+        Each customer has one review per dish, so repeating this replaces it.
+        The body is scored for sentiment when written. Customers only: a
+        restaurant's owners and staff can't review their own dishes.
+      operationId: putReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                body: { type: string, maxLength: 2000 }
+            example:
+              rating: 4
+              body: Lovely, if a little dry. Better than second breakfast.
+      responses:
+        "200":
+          description: Replaced my earlier review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Reviews]
+      summary: Delete my review
+      operationId: deleteReview
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The `token` from **POST /auth/login**.
+
+  parameters:
+    slug:
+      name: slug
+      in: path
+      required: true
+      description: The restaurant.
+      schema: { type: string, examples: [orc-shack, green-dragon] }
+    dishId:
+      name: id
+      in: path
+      required: true
+      description: The dish's ID.
+      schema: { $ref: "#/components/schemas/ID" }
+    limit:
+      name: limit
+      in: query
+      description: Page size, 1 to 100.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  requestBodies:
+    Dish:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DishInput" }
+          example:
+            name: Lembas
+            description: Elvish waybread. One bite fills a grown man's stomach.
+            price: { amount: 4550, currency: ZAR }
+            image: https://example.com/lembas.jpg
+
+  responses:
+    StatusOK:
+      description: OK.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, examples: [ok] }
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    BadRequest:
+      description: Invalid input; `detail` says what's wrong.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: { type: "about:blank", title: Bad Request, status: 400, detail: price.currency must be ZAR }
+    Unauthorized:
+      description: "No valid token. Log in and send it as `Authorization: Bearer <token>`."
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, examples: ['Bearer realm="pony"'] }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Logged in, but your role at this restaurant doesn't allow it.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: { type: "about:blank", title: Forbidden, status: 403, detail: "your role here (customer) may not manage dishes" }
+    NotFound:
+      description: No such restaurant, dish, review or photo (or not in this restaurant).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooLarge:
+      description: The body is too large.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooManyRequests:
+      description: Slow down; try again after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          description: Seconds to wait.
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    ID:
+      type: string
+      pattern: "^[0-9A-Za-z]{22}$"
+      examples: [034tZEFDJVH0ahD5bW1UPM]
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status]
+      properties:
+        type: { type: string, examples: ["about:blank"] }
+        title: { type: string, examples: [Not Found] }
+        status: { type: integer, examples: [404] }
+        detail: { type: string, examples: [dish not found] }
+
+    User:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/ID" }
+        name: { type: string }
+        email: { type: string, format: email }
+
+    Money:
+      type: object
+      additionalProperties: false
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          description: In the currency's minor unit, so 4550 is R45.50.
+          examples: [4550]
+        currency:
+          type: string
+          description: ISO 4217; must be the restaurant's currency.
+          examples: [ZAR]
+
+    DishInput:
+      type: object
+      additionalProperties: false
+      required: [name, description, price, image]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, minLength: 1, maxLength: 2000 }
+        price: { $ref: "#/components/schemas/Money" }
+        image: { type: string, minLength: 1, maxLength: 2048, description: A URL supplied by the client. }
+
+    Dish:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/ID" }
+        name: { type: string }
+        description: { type: string }
+        price: { $ref: "#/components/schemas/Money" }
+        image: { type: string }
+        rating: { $ref: "#/components/schemas/Rating" }
+        photo:
+          oneOf:
+            - $ref: "#/components/schemas/Photo"
+            - type: "null"
+
+    Rating:
+      type: object
+      description: Kept up to date by the database as reviews change.
+      properties:
+        average:
+          type: [number, "null"]
+          description: Null when there are no reviews.
+        count: { type: integer }
+
+    Photo:
+      type: object
+      properties:
+        url: { type: string, description: Relative to the API's base URL. }
+        width: { type: integer }
+        height: { type: integer }
+        thumbhash:
+          type: string
+          description: A ~25-byte blurred preview, base64 (evanw.github.io/thumbhash).
+        placeholder:
+          type: string
+          description: A tiny PNG data URL to show while the photo loads.
+
+    Review:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/ID" }
+        dish_id: { $ref: "#/components/schemas/ID" }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        body: { type: string }
+        sentiment: { $ref: "#/components/schemas/Sentiment" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Sentiment:
+      type: object
+      description: Absent when the review has no body (or scoring failed; the review is kept).
+      properties:
+        score: { type: number, minimum: -1, maximum: 1 }
+        label: { type: string, enum: [positive, neutral, negative] }
+        model: { type: string, description: "Which scorer produced it, so scores from different models are never mixed.", examples: [wordlist-v1] }

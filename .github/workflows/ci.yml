@@ -71,6 +71,9 @@ jobs:
       # seed, app, Prometheus) and runs the Bruno collection against it, so
       # the collection, Dockerfile and compose file can't drift from the API.
       - run: make api-test
+      # The spec behind /docs must stay valid OpenAPI (tests already check
+      # it lists exactly the routes the API serves).
+      - run: make api-lint
 
   # Every green push to main is deployed to https://silson.dev. The binary is
   # built here and copied over SSH; deploy/pony-deploy on the droplet

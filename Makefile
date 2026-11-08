@@ -93,6 +93,10 @@ api-test: ## Run the Bruno collection against the full compose stack, in isolati
 	curl -sf http://127.0.0.1:19090/-/ready >/dev/null || { echo "prometheus not ready"; exit 1; }; \
 	$(BRUNO) run --env local --env-var baseUrl=http://127.0.0.1:$(API_TEST_PORT)
 
+.PHONY: api-lint
+api-lint: ## Lint the OpenAPI spec served at /docs (needs Docker)
+	docker run --rm -v "$(CURDIR)/internal/apidocs:/spec:ro" -w /spec redocly/cli:2.76.0 lint --config redocly.yaml openapi.yaml
+
 .PHONY: up
 up: ## Start Postgres, Prometheus (:9090) and Grafana (:3000) in Docker (needs .env)
 	docker compose up -d --wait postgres prometheus grafana
