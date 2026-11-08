@@ -204,3 +204,23 @@ limit), then pipelining `BEGIN`, `set_config` and the query in one batch.
 Caveats: the cache serves a session for up to 30 s and a restaurant for 60 s
 after a change made outside this process (logout in this process evicts at
 once; see ADR-002). One run each, from one client location.
+
+### Per-customer rate limit (8 November, later)
+
+Each logged-in customer may make 30 requests at once, then 10 a second
+(token bucket; `PONY_USER_RATE`, `PONY_USER_BURST`). One k6 user at
+300 req/s would now measure the limit, not the server, so production runs
+use 1,000 customers: `loadtest/sessions.sql` gives the load-test users
+sessions whose tokens come from a secret prefix, and `browse.js` picks one
+per request when `TOKEN_PREFIX` is set. The local load stack turns the
+limit off (`loadtest/compose.yml`).
+
+Checked on production:
+
+- **One customer, 40 requests at once:** 30 answered, 10 refused with `429`
+  (`pony_rate_limited_total` 0 → 10).
+- **300 req/s for 60 s over 1,000 customers:** 0 errors of 17,796 and no
+  refusals. Client p95 was 660 ms, higher than the single-customer run
+  (230 ms). Not yet investigated; a likely part is the session cache: 1,000
+  sessions with a 30 s lifetime means roughly one request in nine misses and
+  goes to the database, against almost none with one customer. One run.

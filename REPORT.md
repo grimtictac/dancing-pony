@@ -32,7 +32,7 @@ tenant; its menu lives at `/restaurants/orc-shack/dishes`.
 | **Task 3:** performance on the same hardware | Measured, then fixed: about 250 → 1,440 requests/s on a droplet-sized stack |
 | **Task 3:** multi-tenant SaaS | Shared schema, composite keys and Postgres Row-Level Security |
 | **Task 4:** sentiment | A local word-list scorer behind a swappable interface |
-| **Task 4:** per-customer rate limiting | *In progress* |
+| **Task 4:** per-customer rate limiting | A token bucket per logged-in customer (burst 30, then 10/s), checked right after the cached session lookup; `429` with `Retry-After` |
 | **Task 4:** OAuth SSO | **Explicitly not done** (see Trade-offs) |
 
 Beyond the brief: photo upload with blurred placeholders, Prometheus metrics
@@ -127,6 +127,15 @@ Details: [docs/performance.md](docs/performance.md).
   database pool, and two fewer round trips per request freed it.
 
 Details: [docs/performance.md](docs/performance.md#production-silsondev-8-november-2026).
+
+**Per-customer rate limit:** each logged-in customer gets a burst of 30
+requests, then 10 a second (`PONY_USER_RATE`, `PONY_USER_BURST`). It's
+checked straight after the session lookup, which the cache answers from
+memory, so turning an abusive customer away costs no database work: the
+reason ADR-002 gives for the cache. Refusals are `429` with `Retry-After`,
+counted in `pony_rate_limited_total`. Production load tests now spread over
+1,000 customers (`loadtest/sessions.sql`), as real traffic would, so they
+measure the server rather than one customer's limit.
 
 ## Trade-offs and what was left out
 
