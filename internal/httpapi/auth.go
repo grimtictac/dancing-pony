@@ -51,6 +51,17 @@ func (a *api) authenticate(w http.ResponseWriter, r *http.Request) (auth.User, b
 		return auth.User{}, false
 	}
 	info(r.Context()).User = id.Encode(u.ID)
+	// After the session lookup, which the session cache makes cheap, so
+	// refusing an abusive customer costs no database work (ADR-002).
+	if a.perUser != nil {
+		if ok, wait := a.perUser.Allow(u.ID.String()); !ok {
+			a.metrics.rateLimited()
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+			info(r.Context()).RetryAfter = wait
+			writeProblem(w, http.StatusTooManyRequests, "too many requests; slow down")
+			return auth.User{}, false
+		}
+	}
 	return u, true
 }
 

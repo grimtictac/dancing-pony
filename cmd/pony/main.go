@@ -13,6 +13,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -45,6 +46,9 @@ Environment:
                               never expose it publicly
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
   PONY_PHOTO_DIR              directory for uploaded dish photos (default data/photos)
+  PONY_USER_RATE              requests per second each logged-in customer may make
+                              (default 10; 0 turns the limit off)
+  PONY_USER_BURST             requests a customer may make at once (default 30)
   PONY_CACHE                  on (default) or off: cache sessions and restaurants
                               in memory (off is for before/after measurements)
 `
@@ -54,6 +58,10 @@ const (
 	defaultPhotoDir     = "data/photos"
 	defaultInternalAddr = "127.0.0.1:9091"
 	shutdownTimeout     = 15 * time.Second
+	// A person browsing makes a few requests a second at most; a page that
+	// fans out needs a burst.
+	defaultUserRate  = 10
+	defaultUserBurst = 30
 )
 
 func main() {
@@ -103,6 +111,9 @@ type config struct {
 	PhotoDir string
 	// Cache is PONY_CACHE: "on" (or empty) or "off".
 	Cache string
+	// UserRate and UserBurst are the per-customer rate limit; rate 0 is off.
+	UserRate  float64
+	UserBurst int
 }
 
 func loadConfig(getenv func(string) string) config {
@@ -114,6 +125,8 @@ func loadConfig(getenv func(string) string) config {
 		TrustedProxies: getenv("PONY_TRUSTED_PROXIES"),
 		PhotoDir:       defaultPhotoDir,
 		Cache:          getenv("PONY_CACHE"),
+		UserRate:       defaultUserRate,
+		UserBurst:      defaultUserBurst,
 	}
 	if v := getenv("PONY_PHOTO_DIR"); v != "" {
 		cfg.PhotoDir = v
@@ -161,6 +174,22 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 		logger.Error("PONY_CACHE must be on or off", "value", cfg.Cache)
 		return 2
 	}
+	if v := getenv("PONY_USER_RATE"); v != "" {
+		r, err := strconv.ParseFloat(v, 64)
+		if err != nil || r < 0 {
+			logger.Error("PONY_USER_RATE must be a number of requests per second, 0 for no limit", "value", v)
+			return 2
+		}
+		cfg.UserRate = r
+	}
+	if v := getenv("PONY_USER_BURST"); v != "" {
+		b, err := strconv.Atoi(v)
+		if err != nil || b < 1 {
+			logger.Error("PONY_USER_BURST must be a whole number of requests, at least 1", "value", v)
+			return 2
+		}
+		cfg.UserBurst = b
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -205,7 +234,12 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 		apiStore = httpapi.WithCache(db, metrics)
 	}
 	logger.Info("in-memory cache", "enabled", cfg.Cache != "off")
-	api := httpapi.New(apiStore, photos, logger, metrics, trusted)
+	var opts []httpapi.Option
+	if cfg.UserRate > 0 {
+		opts = append(opts, httpapi.WithUserRateLimit(cfg.UserRate, cfg.UserBurst))
+	}
+	logger.Info("per-customer rate limit", "per_second", cfg.UserRate, "burst", cfg.UserBurst)
+	api := httpapi.New(apiStore, photos, logger, metrics, trusted, opts...)
 	internalMux := http.NewServeMux()
 	internalMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	// Profiling (go tool pprof http://127.0.0.1:9091/debug/pprof/profile).

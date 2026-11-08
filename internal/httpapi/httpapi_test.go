@@ -32,7 +32,7 @@ func (a *testAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // newAPI returns the API on a fresh database seeded with the demo users
 // and restaurants: orc-shack (Seed Cake, Mushroom Pie) and green-dragon.
-func newAPI(t *testing.T) *testAPI {
+func newAPI(t *testing.T, opts ...Option) *testAPI {
 	t.Helper()
 	ctx := context.Background()
 	db := storetest.Migrated(t)
@@ -55,7 +55,7 @@ func newAPI(t *testing.T) *testAPI {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = photos.Close() })
-	a := &testAPI{raw: New(s, photos, slog.New(slog.DiscardHandler), nil, nil), tokens: map[string]string{}}
+	a := &testAPI{raw: New(s, photos, slog.New(slog.DiscardHandler), nil, nil, opts...), tokens: map[string]string{}}
 	for _, u := range store.DemoUsers {
 		a.tokens[u.Name] = login(t, a.raw, u.Email, store.DemoPassword)
 	}

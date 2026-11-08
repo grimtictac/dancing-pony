@@ -17,6 +17,7 @@ type Metrics struct {
 	logins         *prometheus.CounterVec
 	photos         *prometheus.CounterVec
 	cache          *prometheus.CounterVec
+	limited        prometheus.Counter
 }
 
 // NewMetrics creates the API's metrics and registers them with reg.
@@ -48,7 +49,11 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		Name: "pony_cache_lookups_total",
 		Help: "In-memory cache lookups, by cache (session, restaurant) and result (hit, miss). Flat when PONY_CACHE=off.",
 	}, []string{"cache", "result"})
-	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins, m.photos, m.cache)
+	m.limited = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "pony_rate_limited_total",
+		Help: "Requests refused by the per-customer rate limit (429).",
+	})
+	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins, m.photos, m.cache, m.limited)
 	for _, c := range []string{"session", "restaurant"} {
 		for _, result := range []string{"hit", "miss"} {
 			m.cache.WithLabelValues(c, result)
@@ -124,4 +129,11 @@ func (m *Metrics) cacheLookup(cache string, hit bool) {
 		result = "hit"
 	}
 	m.cache.WithLabelValues(cache, result).Inc()
+}
+
+func (m *Metrics) rateLimited() {
+	if m == nil {
+		return
+	}
+	m.limited.Inc()
 }

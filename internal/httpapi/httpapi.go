@@ -60,6 +60,19 @@ type api struct {
 	// guessing against it without locking Frodo out.
 	loginByPair, loginByEmail, loginByIP *auth.Throttle
 	registerByIP                         *auth.Throttle
+
+	// Per-customer rate limit (Task 4), applied to every authenticated
+	// request; nil means no limit.
+	perUser *auth.RateLimiter
+}
+
+// Option configures the API.
+type Option func(*api)
+
+// WithUserRateLimit limits each logged-in user to burst requests at once
+// and rate per second after that, answering 429 beyond it.
+func WithUserRateLimit(rate float64, burst int) Option {
+	return func(a *api) { a.perUser = auth.NewRateLimiter(rate, burst) }
 }
 
 // New returns the HTTP handler for the API. Routes use the standard library's
@@ -69,13 +82,16 @@ type api struct {
 //
 // m may be nil, to record no metrics. trusted lists the reverse proxies
 // whose X-Real-IP / X-Forwarded-For headers are believed (see clientIP).
-func New(s Store, photos photo.Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix) http.Handler {
+func New(s Store, photos photo.Store, logger *slog.Logger, m *Metrics, trusted []netip.Prefix, opts ...Option) http.Handler {
 	a := &api{
 		store: s, scorer: sentiment.WordList{}, metrics: m, logger: logger, photos: photos, trusted: trusted,
 		loginByPair:  auth.NewThrottle(5, time.Second, 15*time.Minute, 15*time.Minute),
 		loginByEmail: auth.NewThrottle(10, time.Second, 30*time.Second, 15*time.Minute),
 		loginByIP:    auth.NewThrottle(20, time.Second, 15*time.Minute, 15*time.Minute),
 		registerByIP: auth.NewThrottle(10, 10*time.Second, time.Hour, time.Hour),
+	}
+	for _, o := range opts {
+		o(a)
 	}
 
 	mux := http.NewServeMux()
