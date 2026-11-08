@@ -16,6 +16,7 @@ type Metrics struct {
 	reviewsWritten *prometheus.CounterVec
 	logins         *prometheus.CounterVec
 	photos         *prometheus.CounterVec
+	cache          *prometheus.CounterVec
 }
 
 // NewMetrics creates the API's metrics and registers them with reg.
@@ -43,7 +44,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		Name: "pony_photo_uploads_total",
 		Help: "Photo uploads, by result: stored, or rejected (wrong type, too big, corrupt).",
 	}, []string{"result"})
-	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins, m.photos)
+	m.cache = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "pony_cache_lookups_total",
+		Help: "In-memory cache lookups, by cache (session, restaurant) and result (hit, miss). Flat when PONY_CACHE=off.",
+	}, []string{"cache", "result"})
+	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins, m.photos, m.cache)
+	for _, c := range []string{"session", "restaurant"} {
+		for _, result := range []string{"hit", "miss"} {
+			m.cache.WithLabelValues(c, result)
+		}
+	}
 	for _, result := range []string{"stored", "rejected"} {
 		m.photos.WithLabelValues(result)
 	}
@@ -103,4 +113,15 @@ func (m *Metrics) photoUpload(result string) {
 		return
 	}
 	m.photos.WithLabelValues(result).Inc()
+}
+
+func (m *Metrics) cacheLookup(cache string, hit bool) {
+	if m == nil {
+		return
+	}
+	result := "miss"
+	if hit {
+		result = "hit"
+	}
+	m.cache.WithLabelValues(cache, result).Inc()
 }

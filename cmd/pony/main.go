@@ -45,6 +45,8 @@ Environment:
                               never expose it publicly
   PONY_MIGRATE_DATABASE_URL   Postgres URL for migrate and seed, as the schema owner
   PONY_PHOTO_DIR              directory for uploaded dish photos (default data/photos)
+  PONY_CACHE                  on (default) or off: cache sessions and restaurants
+                              in memory (off is for before/after measurements)
 `
 
 const (
@@ -99,6 +101,8 @@ type config struct {
 	TrustedProxies string
 	// PhotoDir is where uploaded dish photos are stored.
 	PhotoDir string
+	// Cache is PONY_CACHE: "on" (or empty) or "off".
+	Cache string
 }
 
 func loadConfig(getenv func(string) string) config {
@@ -109,6 +113,7 @@ func loadConfig(getenv func(string) string) config {
 		InternalAddr:   defaultInternalAddr,
 		TrustedProxies: getenv("PONY_TRUSTED_PROXIES"),
 		PhotoDir:       defaultPhotoDir,
+		Cache:          getenv("PONY_CACHE"),
 	}
 	if v := getenv("PONY_PHOTO_DIR"); v != "" {
 		cfg.PhotoDir = v
@@ -152,6 +157,10 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 		logger.Error("PONY_DATABASE_URL is not set")
 		return 2
 	}
+	if cfg.Cache != "" && cfg.Cache != "on" && cfg.Cache != "off" {
+		logger.Error("PONY_CACHE must be on or off", "value", cfg.Cache)
+		return 2
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -190,7 +199,13 @@ func serve(args []string, getenv func(string) string, stderr io.Writer) int {
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	api := httpapi.New(db, photos, logger, httpapi.NewMetrics(reg), trusted)
+	metrics := httpapi.NewMetrics(reg)
+	var apiStore httpapi.Store = db
+	if cfg.Cache != "off" {
+		apiStore = httpapi.WithCache(db, metrics)
+	}
+	logger.Info("in-memory cache", "enabled", cfg.Cache != "off")
+	api := httpapi.New(apiStore, photos, logger, metrics, trusted)
 	internalMux := http.NewServeMux()
 	internalMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	// Profiling (go tool pprof http://127.0.0.1:9091/debug/pprof/profile).
