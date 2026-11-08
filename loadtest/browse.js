@@ -5,6 +5,7 @@
 //
 //   make load-up && make load-test          (RATE=200 DURATION=1m to change)
 //   make load-test-prod                     (against https://silson.dev)
+//   k6 cloud run ... browse.js              (from London; see docs/performance.md)
 import http from 'k6/http';
 import { check } from 'k6';
 
@@ -22,6 +23,11 @@ if (!__ENV.REMOTE) {
   thresholds['http_req_duration{name:dish}'] = ['p(95)<100'];
 }
 
+// Grafana Cloud k6 bills by virtual-user hours, sized from maxVUs, so keep it
+// near what the rate needs: VUs ≈ rate × response time. From London to a
+// London server that's a handful; from far away, hundreds.
+const maxVUs = Number(__ENV.MAX_VUS || 300);
+
 export const options = {
   scenarios: {
     browse: {
@@ -29,12 +35,19 @@ export const options = {
       rate: Number(__ENV.RATE || 100),
       timeUnit: '1s',
       duration: __ENV.DURATION || '30s',
-      preAllocatedVUs: 50,
-      maxVUs: 300,
+      preAllocatedVUs: Math.min(50, maxVUs),
+      maxVUs,
     },
   },
   thresholds,
   summaryTrendStats: ['med', 'p(95)', 'p(99)', 'max'],
+  // Used only by `k6 cloud run`: generate the load in London, next to the
+  // droplet (LON1), so results measure the server, not the network to it.
+  // The project comes from K6_CLOUD_PROJECT_ID.
+  cloud: {
+    name: `browse ${__ENV.RATE || 100}/s`,
+    distribution: { london: { loadZone: 'amazon:gb:london', percent: 100 } },
+  },
 };
 
 export function setup() {
