@@ -9,9 +9,13 @@ info:
 
     ## Try it
 
-    1. Open **POST /auth/login** and send one of the demo accounts below.
-    2. Copy the `token` from the response.
-    3. Paste it under **Authentication** (bearer), then call any endpoint.
+    1. Open **Auth → Log in**, choose **Test Request**, and **Send**. Frodo's
+       demo login is filled in; the token it returns is then used for every
+       request on this page.
+    2. Try anything else. The restaurant (`orc-shack`) and a dish (Seed Cake)
+       are filled in too; change them to explore.
+
+    To act as someone else, log in again with another account below.
 
     | Email | Password | Can |
     |---|---|---|
@@ -512,12 +516,12 @@ components:
       in: path
       required: true
       description: The restaurant.
-      schema: { type: string, examples: [orc-shack, green-dragon] }
+      schema: { type: string, default: orc-shack, examples: [orc-shack, green-dragon] }
     dishId:
       name: id
       in: path
       required: true
-      description: The dish's ID.
+      description: "The dish's ID. The example is Seed Cake at orc-shack; list the menu for others."
       schema: { $ref: "#/components/schemas/ID" }
     limit:
       name: limit
