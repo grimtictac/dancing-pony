@@ -1,3 +1,6 @@
+> **Reviewers:** start with [REPORT.md](REPORT.md): what was built, how to try
+> it, and the trade-offs. The original brief follows.
+
 ### Objective
 
 Your assignment is to implement a REST API for a restaurant.
