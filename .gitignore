@@ -15,3 +15,7 @@ PLAN_LOCAL.md
 # Uploaded photos (PONY_PHOTO_DIR's default)
 /data/
 /coverage.out
+
+# Load tests: k6 HTML reports, and the secret prefix of the load-test sessions
+loadtest/report-*.html
+loadtest/.token-prefix

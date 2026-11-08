@@ -50,23 +50,37 @@ export const options = {
   },
 };
 
+// Who the load comes from. With TOKEN_PREFIX (see loadtest/sessions.sql),
+// each request comes from one of USERS load-test customers, as real traffic
+// would, so the per-customer rate limit isn't what's measured. Without it,
+// everything comes from Frodo: fine where the limit is off (make load-up).
+const PREFIX = __ENV.TOKEN_PREFIX;
+const USERS = Number(__ENV.USERS || 1000);
+
 export function setup() {
-  const login = http.post(
-    `${BASE}/auth/login`,
-    JSON.stringify({ email: 'frodo@shire.example', password: 'pony-demo-password' }),
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-  if (login.status !== 200) throw new Error(`login failed: ${login.status} ${login.body}`);
-  const token = login.json('token');
-  const page = http.get(`${MENU}?limit=100&sort=-price`, { headers: { Authorization: `Bearer ${token}` } });
-  return { token, ids: page.json().map((d) => d.id) };
+  let tokens;
+  if (PREFIX) {
+    tokens = Array.from({ length: USERS }, (_, i) => `${PREFIX}-${i + 1}`);
+  } else {
+    const login = http.post(
+      `${BASE}/auth/login`,
+      JSON.stringify({ email: 'frodo@shire.example', password: 'pony-demo-password' }),
+      { headers: { 'Content-Type': 'application/json' } },
+    );
+    if (login.status !== 200) throw new Error(`login failed: ${login.status} ${login.body}`);
+    tokens = [login.json('token')];
+  }
+  const page = http.get(`${MENU}?limit=100&sort=-price`, { headers: { Authorization: `Bearer ${tokens[0]}` } });
+  if (page.status !== 200) throw new Error(`menu failed: ${page.status} ${page.body}`);
+  return { tokens, ids: page.json().map((d) => d.id) };
 }
 
 const terms = ['mushroom', 'mushrom', 'pie', 'honey cake', 'stew', 'lembas', 'potato soup'];
 const sorts = ['', 'name', '-name', 'price', '-price'];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
-export default function ({ token, ids }) {
+export default function ({ tokens, ids }) {
+  const token = pick(tokens);
   const get = (url, name) => http.get(url, { headers: { Authorization: `Bearer ${token}` }, tags: { name } });
   const r = Math.random();
   let res;

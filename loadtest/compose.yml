@@ -9,3 +9,9 @@ services:
       - shared_preload_libraries=pg_stat_statements
       - -c
       - pg_stat_statements.track=all
+  # k6 browses as a single customer to measure throughput, which the
+  # per-customer limit would cap at 10 requests/s. Production load tests
+  # spread over many customers instead (loadtest/sessions.sql).
+  app:
+    environment:
+      PONY_USER_RATE: "0"
