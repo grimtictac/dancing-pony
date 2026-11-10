@@ -1,4 +1,5 @@
-# The Dancing Pony: report for reviewers
+# The Dancing Pony
+## A multi-tenant REST API for browsing and reviewing restaurant dishes.
 
 A multi-restaurant REST API in Go. The Orc Shack from the brief is the first
 tenant; its menu lives at `/restaurants/orc-shack/dishes`.
