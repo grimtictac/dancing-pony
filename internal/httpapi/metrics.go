@@ -47,14 +47,14 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	}, []string{"result"})
 	m.cache = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "pony_cache_lookups_total",
-		Help: "In-memory cache lookups, by cache (session, restaurant) and result (hit, miss). Flat when PONY_CACHE=off.",
+		Help: "In-memory cache lookups, by cache (session, restaurant, menu, dish) and result (hit, miss). Flat when PONY_CACHE=off.",
 	}, []string{"cache", "result"})
 	m.limited = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "pony_rate_limited_total",
 		Help: "Requests refused by the per-customer rate limit (429).",
 	})
 	reg.MustRegister(m.requests, m.duration, m.reviewsWritten, m.logins, m.photos, m.cache, m.limited)
-	for _, c := range []string{"session", "restaurant"} {
+	for _, c := range []string{"session", "restaurant", "menu", "dish"} {
 		for _, result := range []string{"hit", "miss"} {
 			m.cache.WithLabelValues(c, result)
 		}
